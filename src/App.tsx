@@ -35,7 +35,6 @@ const ProtectedRoutes = () => {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/exercises" element={<Exercises />} />
-<Route path="/test-3d" element={<Test3D />} />
         <Route path="/workout" element={<Workout />} />
         <Route path="/history" element={<History />} />
         <Route path="/profile" element={<Profile />} />
