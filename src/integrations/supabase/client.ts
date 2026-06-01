@@ -39,4 +39,18 @@ export const supabase: any = {
     const dataMap: Record<string, any[]> = {
       workout_sessions: [
         { id: "s1", user_id: "dev-user", plan_name: "Chest Press", duration_seconds: 1800, completed_at: now.toISOString() },
-        { id: "s2", user_id: "dev-user", plan_name: "Squats", duration_seconds: 2100, completed_at: sevenAgo.to
+        { id: "s2", user_id: "dev-user", plan_name: "Squats", duration_seconds: 2100, completed_at: sevenAgo.toISOString() },
+      ],
+    };
+
+    return {
+      select: (_fields: string) => ({
+        order: (_field: string, _options: any) => ({
+          eq: (_field: string, _value: any) => ({
+            then: () => Promise.resolve({ data: dataMap[table] || [], error: null }),
+          }),
+        }),
+      }),
+    };
+  },
+};
