@@ -44,6 +44,10 @@ const ExerciseLibrary = () => {
           <option value="Chest">חזה</option>
           <option value="Back">גב</option>
           <option value="Legs">רגליים</option>
+          <option value="Shoulders">כתפיים</option>
+          <option value="Biceps">יד קדמית</option>
+          <option value="Triceps">יד אחורית</option>
+          <option value="Core">בטן</option>
         </select>
       </div>
 
