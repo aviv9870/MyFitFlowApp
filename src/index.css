@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@100;300;400;500;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 7%;
+    --foreground: 0 0% 95%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 145 100% 50%;
+    --primary-foreground: 220 20% 7%;
+
+    --secondary: 220 15% 16%;
+    --secondary-foreground: 0 0% 85%;
+
+    --muted: 220 15% 14%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 145 80% 42%;
+    --accent-foreground: 220 20% 7%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 95%;
+
+    --border: 220 15% 18%;
+    --input: 220 15% 18%;
+    --ring: 145 100% 50%;
+
+    --radius: 1rem;
+
+    --neon-glow: 145 100% 50%;
+    --neon-cyan: 180 100% 50%;
+    --neon-purple: 270 100% 65%;
+    --surface-glass: 220 15% 12%;
+
+    --sidebar-background: 220 18% 10%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 145 100% 50%;
+    --sidebar-primary-foreground: 220 20% 7%;
+    --sidebar-accent: 220 15% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 145 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    direction: rtl;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Be Vietnam Pro', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl;
+  }
+
+  .neon-text {
+    color: hsl(var(--primary));
+    text-shadow: 0 0 10px hsl(var(--primary) / 0.5), 0 0 30px hsl(var(--primary) / 0.2);
+  }
+
+  .neon-border {
+    border-color: hsl(var(--primary) / 0.4);
+    box-shadow: 0 0 15px hsl(var(--primary) / 0.1), inset 0 0 15px hsl(var(--primary) / 0.05);
+  }
+
+  .neon-glow-box {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.15), 0 0 60px hsl(var(--primary) / 0.05);
+  }
+
+  .material-icon {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+  }
+}
