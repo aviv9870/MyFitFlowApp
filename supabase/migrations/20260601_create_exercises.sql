@@ -11,3 +11,5 @@ create table if not exists exercises (
 -- Basic RLS
 alter table exercises enable row level security;
 create policy "Allow read access for all users" on exercises for select using (true);
+-- Temporary policy to allow inserts during seeding
+create policy "Allow insert for seeding" on exercises for insert using (true);

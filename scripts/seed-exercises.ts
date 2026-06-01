@@ -1,4 +1,7 @@
-import { supabase } from "../src/integrations/supabase/client";
+// Import Supabase client using correct relative path from the scripts directory
+// Adjust import path to correctly locate the Supabase client from the scripts directory
+// Import Supabase client with explicit file extension for TS execution
+import { supabase } from "../src/integrations/supabase/client.ts";
 
 const exercises = [
   // Chest (15)
