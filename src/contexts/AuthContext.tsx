@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   // Development mode: bypass Supabase auth with mock user
-  const DEV_MODE = true;
+  const DEV_MODE = false;
   const MOCK_USER = {
     id: "dev-user",
     email: "dev@example.com",
