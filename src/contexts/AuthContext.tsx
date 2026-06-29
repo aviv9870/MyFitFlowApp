@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { applyTheme } from "@/lib/theme";
 
 interface AuthContextType {
   user: User | null;
@@ -57,6 +58,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("user_settings").select("theme_color").eq("user_id", user.id).single()
+      .then(({ data }) => { if (data?.theme_color) applyTheme(data.theme_color); });
+  }, [user?.id]);
 
   const signOut = async () => {
     await supabase.auth.signOut();

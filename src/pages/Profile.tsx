@@ -5,6 +5,7 @@ import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import Settings from "@/pages/Settings";
 import Measurements from "@/pages/Measurements";
+import { applyTheme } from "@/lib/theme";
 
 const Profile = () => {
   const { user, signOut } = useAuth();
@@ -39,31 +40,9 @@ const Profile = () => {
         .eq("user_id", user.id);
       setTotalWorkouts(count ?? 0);
 
-      // Apply saved theme
-      const { data: settings } = await supabase.from("user_settings").select("theme_color").eq("user_id", user.id).single();
-      if (settings?.theme_color) {
-        applyTheme(settings.theme_color);
-      }
     };
     fetchProfile();
   }, [user]);
-
-  const applyTheme = (colorId: string) => {
-    const root = document.documentElement;
-    const colorMap: Record<string, { primary: string; accent: string; ring: string; neon: string }> = {
-      green: { primary: "145 100% 50%", accent: "145 80% 42%", ring: "145 100% 50%", neon: "145 100% 50%" },
-      cyan: { primary: "180 100% 50%", accent: "180 80% 42%", ring: "180 100% 50%", neon: "180 100% 50%" },
-      purple: { primary: "270 100% 65%", accent: "270 80% 55%", ring: "270 100% 65%", neon: "270 100% 65%" },
-      orange: { primary: "25 100% 55%", accent: "25 80% 48%", ring: "25 100% 55%", neon: "25 100% 55%" },
-    };
-    const c = colorMap[colorId] ?? colorMap.green;
-    root.style.setProperty("--primary", c.primary);
-    root.style.setProperty("--accent", c.accent);
-    root.style.setProperty("--ring", c.ring);
-    root.style.setProperty("--neon-glow", c.neon);
-    root.style.setProperty("--sidebar-primary", c.primary);
-    root.style.setProperty("--sidebar-ring", c.ring);
-  };
 
   const saveWeight = async () => {
     if (!user || !bodyWeight) return;

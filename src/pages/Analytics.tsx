@@ -23,46 +23,9 @@ const Analytics = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({ totalWorkouts: 0, avgDuration: 0, improvement: 0 });
 
-  // Mock data effect will be inserted after muscleVolumes state declaration
   const [aiInsights, setAiInsights] = useState<{ insights: string[]; recommendation: string } | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
   const [muscleVolumes, setMuscleVolumes] = useState<Record<string, number>>({});
-
-  // Mock workout data for testing the 3D muscle map when Supabase is unavailable
-  useEffect(() => {
-    // Only apply mock data if there are no real workouts fetched yet
-    if (stats.totalWorkouts === 0) {
-      const mockWorkouts = [
-        { id: "w1", completed_at: new Date().toISOString(), duration_seconds: 3600, plan_name: "Plan A" },
-        { id: "w2", completed_at: new Date(Date.now() - 86400000).toISOString(), duration_seconds: 3000, plan_name: "Plan B" },
-        { id: "w3", completed_at: new Date(Date.now() - 2 * 86400000).toISOString(), duration_seconds: 4200, plan_name: "Plan C" },
-        { id: "w4", completed_at: new Date(Date.now() - 3 * 86400000).toISOString(), duration_seconds: 2700, plan_name: "Plan D" },
-        { id: "w5", completed_at: new Date(Date.now() - 4 * 86400000).toISOString(), duration_seconds: 3300, plan_name: "Plan E" },
-      ];
-      const totalWorkouts = mockWorkouts.length;
-      const avgDuration = Math.floor(
-        mockWorkouts.reduce((sum, w) => sum + w.duration_seconds, 0) / totalWorkouts / 60
-      );
-      const improvement = 0;
-      setStats({ totalWorkouts, avgDuration, improvement });
-
-      const mockMuscleVolumes = {
-        חזה: 5000,
-        גב: 4000,
-        כתפיים: 3000,
-        רגליים: 6000,
-        "יד קדמית": 2000,
-        "יד אחורית": 1500,
-        ישבן: 3500,
-        בטן: 2500,
-        אמות: 1200,
-        קרדיו: 800,
-        פונקציונלי: 1000,
-      };
-      // @ts-ignore setMuscleVolumes expects a Record<string, number>
-      setMuscleVolumes(mockMuscleVolumes);
-    }
-  }, []);
   const [showProgress, setShowProgress] = useState(false);
   const [progressData, setProgressData] = useState<any[]>([]);
   const [loadingProgress, setLoadingProgress] = useState(false);

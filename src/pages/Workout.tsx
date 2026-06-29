@@ -166,30 +166,42 @@ const Workout = () => {
   const startWorkout = useCallback(async (plan: PlanData) => {
     if (!user) return;
     setSelectedPlan(plan);
+    setCompletionOrder([]);
 
     const exNames = plan.exercises.map((e) => e.exercise_name);
-    // Fetch per-set previous data: get all sets from the most recent session for each exercise
+
+    // Batch: one query to find the latest session_id per exercise
+    const { data: latestRows } = await supabase
+      .from("workout_set_logs")
+      .select("exercise_name, session_id, created_at")
+      .eq("user_id", user.id)
+      .in("exercise_name", exNames)
+      .order("created_at", { ascending: false });
+
+    const latestSessionPerExercise: Record<string, string> = {};
+    for (const row of (latestRows ?? [])) {
+      if (!latestSessionPerExercise[row.exercise_name]) {
+        latestSessionPerExercise[row.exercise_name] = row.session_id;
+      }
+    }
+
+    // Batch: one query to fetch all sets from those sessions
+    const sessionIds = [...new Set(Object.values(latestSessionPerExercise))];
     const prevDataPerSet: Record<string, { weight: number; reps: number }[]> = {};
-    for (const name of exNames) {
-      // Find the latest session that has this exercise
-      const { data: latestSet } = await supabase
+    if (sessionIds.length > 0) {
+      const { data: allPrevSets } = await supabase
         .from("workout_set_logs")
-        .select("session_id")
+        .select("exercise_name, weight, reps, set_number, session_id")
         .eq("user_id", user.id)
-        .eq("exercise_name", name)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      
-      if (latestSet && latestSet.length > 0) {
-        const { data: allSets } = await supabase
-          .from("workout_set_logs")
-          .select("weight, reps, set_number")
-          .eq("session_id", latestSet[0].session_id)
-          .eq("exercise_name", name)
-          .order("set_number", { ascending: true });
-        prevDataPerSet[name] = (allSets ?? []).map(s => ({ weight: s.weight, reps: s.reps }));
-      } else {
-        prevDataPerSet[name] = [];
+        .in("session_id", sessionIds)
+        .in("exercise_name", exNames)
+        .order("set_number", { ascending: true });
+
+      for (const s of (allPrevSets ?? [])) {
+        if (s.session_id === latestSessionPerExercise[s.exercise_name]) {
+          if (!prevDataPerSet[s.exercise_name]) prevDataPerSet[s.exercise_name] = [];
+          prevDataPerSet[s.exercise_name].push({ weight: s.weight, reps: s.reps });
+        }
       }
     }
 
@@ -354,6 +366,7 @@ const Workout = () => {
     setPhase("select");
     setStartTimestamp(0);
     setElapsed(0);
+    setCompletionOrder([]);
   };
 
   const deletePlan = async (planId: string) => {
@@ -382,9 +395,7 @@ const Workout = () => {
   const saveEditedWorkout = async () => {
     if (!user || !doneSessionId) return;
     try {
-      // Delete old logs, re-insert
-      await supabase.from("workout_set_logs").delete().eq("session_id", doneSessionId);
-      const setLogs = exercises.flatMap((ex) =>
+      const setLogs = exercises.flatMap((ex, exIdx) =>
         ex.sets
           .filter((s) => s.reps > 0)
           .map((s, idx) => ({
@@ -394,11 +405,18 @@ const Workout = () => {
             set_number: idx + 1,
             weight: s.weight,
             reps: s.reps,
+            exercise_order: exIdx,
           }))
       );
+
+      const { error: delErr } = await supabase.from("workout_set_logs").delete().eq("session_id", doneSessionId);
+      if (delErr) throw delErr;
+
       if (setLogs.length > 0) {
-        await supabase.from("workout_set_logs").insert(setLogs);
+        const { error: insErr } = await supabase.from("workout_set_logs").insert(setLogs);
+        if (insErr) throw insErr;
       }
+
       toast.success("השינויים נשמרו!");
       setEditingDone(false);
     } catch {

@@ -10,6 +10,7 @@ interface SetLog {
   set_number: number;
   weight: number;
   reps: number;
+  exercise_order?: number | null;
 }
 
 interface Props {
@@ -76,8 +77,8 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   const saveEdits = async () => {
     if (!user || saving) return;
     setSaving(true);
+    const backup = [...sets];
     try {
-      await supabase.from("workout_set_logs").delete().eq("session_id", sessionId);
       const inserts = editSets.filter(s => s.reps > 0).map(s => ({
         session_id: sessionId,
         user_id: user.id,
@@ -85,10 +86,31 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
         set_number: s.set_number,
         weight: s.weight,
         reps: s.reps,
+        exercise_order: s.exercise_order ?? null,
       }));
+
+      const { error: delErr } = await supabase.from("workout_set_logs").delete().eq("session_id", sessionId);
+      if (delErr) throw delErr;
+
       if (inserts.length > 0) {
-        await supabase.from("workout_set_logs").insert(inserts);
+        const { error: insErr } = await supabase.from("workout_set_logs").insert(inserts);
+        if (insErr) {
+          // Restore original rows to avoid permanent data loss
+          await supabase.from("workout_set_logs").insert(
+            backup.map(s => ({
+              session_id: sessionId,
+              user_id: user.id,
+              exercise_name: s.exercise_name,
+              set_number: s.set_number,
+              weight: s.weight,
+              reps: s.reps,
+              exercise_order: s.exercise_order ?? null,
+            }))
+          );
+          throw insErr;
+        }
       }
+
       setSets(editSets.filter(s => s.reps > 0));
       setEditing(false);
       toast.success("האימון עודכן בהצלחה");

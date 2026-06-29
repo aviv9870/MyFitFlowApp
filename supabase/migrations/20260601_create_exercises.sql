@@ -12,4 +12,5 @@ create table if not exists exercises (
 alter table exercises enable row level security;
 create policy "Allow read access for all users" on exercises for select using (true);
 -- Temporary policy to allow inserts during seeding
-create policy "Allow insert for seeding" on exercises for insert using (true);
+-- Temporary policy to allow inserts during seeding (allows any user to insert)
+create policy "Allow insert for seeding" on exercises for insert using (true) with check (true);

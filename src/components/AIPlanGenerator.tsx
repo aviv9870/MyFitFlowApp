@@ -97,6 +97,13 @@ const AIPlanGenerator = ({ onPlanCreated, onCancel }: Props) => {
         .single();
       if (error) throw error;
 
+      const unmatched = result.exercises
+        .filter((ex: any) => !exerciseMap.get(ex.name))
+        .map((ex: any) => ex.name);
+      if (unmatched.length > 0) {
+        toast.warning(`${unmatched.length} תרגילים לא נמצאו בספרייה ולא נשמרו: ${unmatched.join(", ")}`);
+      }
+
       const rows = result.exercises
         .map((ex: any, i: number) => {
           const exerciseId = exerciseMap.get(ex.name);
