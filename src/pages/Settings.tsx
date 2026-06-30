@@ -70,23 +70,22 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
     if (!user) return;
     setSaving(true);
     try {
-      await supabase.from("profiles").update({ display_name: displayName }).eq("user_id", user.id);
+      await supabase.from("profiles").upsert(
+        { user_id: user.id, display_name: displayName },
+        { onConflict: "user_id" }
+      );
 
-      const settingsData = {
-        user_id: user.id,
-        gender,
-        birth_year: birthYear ? parseInt(birthYear) : null,
-        height_cm: heightCm ? parseFloat(heightCm) : null,
-        theme_color: themeColor,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data: existing } = await supabase.from("user_settings").select("id").eq("user_id", user.id).single();
-      if (existing) {
-        await supabase.from("user_settings").update(settingsData).eq("user_id", user.id);
-      } else {
-        await supabase.from("user_settings").insert(settingsData);
-      }
+      await supabase.from("user_settings").upsert(
+        {
+          user_id: user.id,
+          gender,
+          birth_year: birthYear ? parseInt(birthYear) : null,
+          height_cm: heightCm ? parseFloat(heightCm) : null,
+          theme_color: themeColor,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
 
       toast.success("ההגדרות נשמרו!");
       onClose();

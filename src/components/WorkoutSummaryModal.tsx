@@ -33,6 +33,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   const [editing, setEditing] = useState(false);
   const [editSets, setEditSets] = useState<SetLog[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,6 +65,18 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   const totalVolume = displaySets.reduce((a, s) => a + s.weight * s.reps, 0);
   const m = Math.floor(durationSeconds / 60);
   const date = new Date(completedAt).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+
+  const deleteSession = async () => {
+    if (!user || deleting) return;
+    setDeleting(true);
+    const { error } = await supabase.from("workout_sessions").delete().eq("id", sessionId);
+    if (error) {
+      toast.error("שגיאה במחיקת האימון");
+      setDeleting(false);
+      return;
+    }
+    onDeleted?.();
+  };
 
   const startEditing = () => {
     setEditSets(sets.map(s => ({ ...s })));
@@ -199,9 +212,21 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-xl flex flex-col overflow-y-auto">
       <div className="flex items-center justify-between px-4 pt-6 pb-3">
         <h2 className="text-base font-bold text-foreground">סיכום אימון</h2>
-        <button onClick={onClose} className="p-1">
-          <MaterialIcon icon="close" className="text-foreground text-[24px]" />
-        </button>
+        <div className="flex items-center gap-2">
+          {!readOnly && (
+            <button
+              onClick={deleteSession}
+              disabled={deleting}
+              className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
+              title="מחק אימון"
+            >
+              <MaterialIcon icon={deleting ? "hourglass_top" : "delete"} className="text-[22px]" />
+            </button>
+          )}
+          <button onClick={onClose} className="p-1">
+            <MaterialIcon icon="close" className="text-foreground text-[24px]" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 mb-4">
