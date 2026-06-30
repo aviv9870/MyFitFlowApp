@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchExercises, Exercise } from "@/services/exercises";
 
 const ExerciseLibrary = () => {
@@ -17,12 +17,18 @@ const ExerciseLibrary = () => {
     });
   }, []);
 
+  const muscleGroups = useMemo(
+    () => [...new Set(exercises.map((e) => e.primary_muscle).filter(Boolean))].sort(),
+    [exercises]
+  );
+
   useEffect(() => {
     let result = exercises;
     if (muscle !== "All") result = result.filter((e) => e.primary_muscle === muscle);
     if (search) {
+      const q = search.toLowerCase();
       result = result.filter((e) =>
-        e.name_he.includes(search) || e.name_en.toLowerCase().includes(search.toLowerCase())
+        (e.name_he ?? "").includes(search) || (e.name_en ?? "").toLowerCase().includes(q)
       );
     }
     setFiltered(result);
@@ -41,13 +47,9 @@ const ExerciseLibrary = () => {
         />
         <select className="p-2 border rounded-lg bg-secondary/50" value={muscle} onChange={(e) => setMuscle(e.target.value)}>
           <option value="All">כל השרירים</option>
-          <option value="Chest">חזה</option>
-          <option value="Back">גב</option>
-          <option value="Legs">רגליים</option>
-          <option value="Shoulders">כתפיים</option>
-          <option value="Biceps">יד קדמית</option>
-          <option value="Triceps">יד אחורית</option>
-          <option value="Core">בטן</option>
+          {muscleGroups.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
         </select>
       </div>
 
