@@ -107,7 +107,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* Display Name */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="badge" className="text-primary text-[18px]" />
           שם תצוגה
@@ -121,7 +121,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* Gender */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="wc" className="text-primary text-[18px]" />
           מין
@@ -145,7 +145,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* Personal Info */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="info" className="text-primary text-[18px]" />
           נתונים אישיים
@@ -175,7 +175,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* Theme Color */}
-      <div className="glass-card neon-border p-4 mb-6">
+      <div className="glass-card p-4 mb-6">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="palette" className="text-primary text-[18px]" />
           צבע עיצוב

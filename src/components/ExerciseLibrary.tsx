@@ -8,7 +8,7 @@ const ExerciseLibrary = () => {
   const [loading, setLoading] = useState(true);
   const [muscle, setMuscle] = useState("All");
   const [search, setSearch] = useState("");
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
 
   useEffect(() => {
     fetchExercises()
@@ -72,7 +72,8 @@ const ExerciseLibrary = () => {
             {filtered.map((ex) => (
               <div
                 key={ex.id}
-                className="glass-card p-3 flex items-center gap-3"
+                className="glass-card p-3 flex items-center gap-3 cursor-pointer hover:bg-secondary/30 active:scale-[0.98] transition-all"
+                onClick={() => setSelectedExercise(ex)}
               >
                 <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                   <MaterialIcon icon="fitness_center" className="text-primary text-[18px]" />
@@ -86,12 +87,7 @@ const ExerciseLibrary = () => {
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-[9px] text-primary bg-primary/10 px-2 py-0.5 rounded-full">{ex.muscle_group}</span>
                   {ex.youtube_url && (
-                    <button
-                      onClick={() => setSelectedVideo(ex.youtube_url)}
-                      className="p-1 rounded-lg hover:bg-secondary/50"
-                    >
-                      <MaterialIcon icon="play_circle" className="text-primary text-[20px]" />
-                    </button>
+                    <MaterialIcon icon="play_circle" className="text-primary/60 text-[18px]" />
                   )}
                 </div>
               </div>
@@ -100,13 +96,47 @@ const ExerciseLibrary = () => {
         </>
       )}
 
-      {selectedVideo && (
+      {selectedExercise && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setSelectedVideo(null)}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+          onClick={() => setSelectedExercise(null)}
         >
-          <div className="bg-card p-2 rounded-xl w-full max-w-lg aspect-video">
-            <iframe src={selectedVideo} className="w-full h-full rounded-lg" allowFullScreen />
+          <div
+            className="bg-card rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {selectedExercise.youtube_url ? (
+              <div className="aspect-video">
+                <iframe
+                  src={selectedExercise.youtube_url}
+                  className="w-full h-full"
+                  allowFullScreen
+                  title={selectedExercise.name}
+                />
+              </div>
+            ) : (
+              <div className="aspect-video bg-secondary/50 flex flex-col items-center justify-center gap-3">
+                <MaterialIcon icon="videocam_off" className="text-muted-foreground text-[48px]" />
+                <p className="text-muted-foreground text-sm">אין סרטון זמין לתרגיל זה</p>
+              </div>
+            )}
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <h2 className="text-base font-bold text-foreground leading-snug">{selectedExercise.name}</h2>
+                <button
+                  onClick={() => setSelectedExercise(null)}
+                  className="p-1 rounded-lg hover:bg-secondary/50 shrink-0 -mt-0.5"
+                >
+                  <MaterialIcon icon="close" className="text-muted-foreground text-[20px]" />
+                </button>
+              </div>
+              <span className="text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+                {selectedExercise.muscle_group}
+              </span>
+              {selectedExercise.description && (
+                <p className="text-sm text-muted-foreground mt-3">{selectedExercise.description}</p>
+              )}
+            </div>
           </div>
         </div>
       )}

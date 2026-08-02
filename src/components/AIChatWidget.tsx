@@ -59,7 +59,7 @@ const AIChatWidget = () => {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="glass-card neon-border p-3 flex items-center gap-2 w-full hover:neon-glow-box transition-all"
+        className="glass-card p-3 flex items-center gap-2 w-full hover:neon-glow-box transition-all"
       >
         <MaterialIcon icon="chat" className="text-primary text-[20px]" />
         <span className="text-sm font-semibold text-foreground flex-1 text-right">שאל את ה-AI</span>
@@ -69,7 +69,7 @@ const AIChatWidget = () => {
   }
 
   return (
-    <div className="glass-card neon-border p-4">
+    <div className="glass-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <MaterialIcon icon="smart_toy" className="text-primary text-[20px]" />

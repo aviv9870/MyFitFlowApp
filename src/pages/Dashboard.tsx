@@ -117,92 +117,93 @@ const Dashboard = () => {
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
       <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onNavigate={handleSidebarNavigate} />
 
-      <div className="flex items-center justify-between mb-6">
-        <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground">
-          <MaterialIcon icon="menu" className="text-[28px]" />
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-[19px] font-extrabold tracking-tight text-foreground">MyFitFlow</h1>
+        <button onClick={() => setSidebarOpen(true)} className="flex flex-col gap-1 p-2 text-muted-foreground">
+          <span className="w-[18px] h-[2px] rounded-full bg-muted-foreground" />
+          <span className="w-[18px] h-[2px] rounded-full bg-muted-foreground" />
         </button>
-        <h1 className="text-lg font-bold neon-text">MyFitFlow</h1>
-        <div className="w-7" />
       </div>
 
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">
+      <div className="mb-[22px]">
+        <h2 className="text-[30px] font-bold tracking-tight leading-[1.15] text-foreground">
           שלום, {displayName}
         </h2>
-        <p className="text-muted-foreground text-sm mt-1">
+        <p className="text-muted-foreground text-[13.5px] leading-relaxed mt-1.5">
           {isFemale
-            ? <>ביצעת <span className="text-primary font-bold">{weeklyCount}</span> אימונים השבוע. את בדרך ליעד!</>
-            : <>ביצעת <span className="text-primary font-bold">{weeklyCount}</span> אימונים השבוע. אתה בדרך ליעד!</>
+            ? <>ביצעת <span className="text-foreground/85 font-semibold">{weeklyCount}</span> אימונים השבוע. את בדרך ליעד!</>
+            : <>ביצעת <span className="text-foreground/85 font-semibold">{weeklyCount}</span> אימונים השבוע. אתה בדרך ליעד!</>
           }
         </p>
       </div>
 
-      <button onClick={() => setShowHistory(true)} className="w-full glass-card neon-border p-4 mb-4 hover:scale-[1.01] transition-transform">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-foreground">לו״ז אימונים</h3>
-          <span className="flex items-center gap-1 text-xs text-primary">
-            <MaterialIcon icon="open_in_new" className="text-[14px]" />
+      <button onClick={() => setShowHistory(true)} className="w-full glass-card p-4 pb-3.5 mb-3.5">
+        <div className="flex items-center justify-between mb-3.5">
+          <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
             פתח יומן
+            <MaterialIcon icon="chevron_left" className="text-[12px]" />
           </span>
+          <h3 className="text-sm font-semibold text-foreground">לו״ז אימונים</h3>
         </div>
         <div className="flex justify-between">
           {weekDays.map((d) => (
-            <div
-              key={d.num}
-              className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all ${
-                d.active ? "bg-primary/20 neon-border" : ""
-              }`}
-            >
-              <span className="text-[10px] text-muted-foreground">{d.day}</span>
-              <span className={`text-sm font-bold ${d.active ? "neon-text" : "text-foreground"}`}>{d.num}</span>
+            <div key={d.num} className="flex flex-col items-center gap-2 w-8">
+              <span className="text-[11px] text-muted-foreground">{d.day}</span>
+              <span
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-semibold ${
+                  d.active ? "bg-primary/16 text-primary" : "text-foreground"
+                }`}
+              >
+                {d.num}
+              </span>
             </div>
           ))}
         </div>
       </button>
 
-      {/* AI Insights + Chat */}
-      <AiInsightsChat user={user} isFemale={isFemale} loadingAi={loadingAi} aiInsights={aiInsights} fetchAiInsights={fetchAiInsights} />
+      <button
+        onClick={() => navigate("/workout")}
+        className="w-full card-elevated p-[18px] mb-3.5 text-right group"
+      >
+        <p className="text-[12.5px] text-muted-foreground mb-3">{isFemale ? "מוכנה להתחיל?" : "מוכן להתחיל?"}</p>
+        <div className="flex items-center gap-3">
+          <span className="w-11 h-11 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+            <MaterialIcon icon="play_arrow" className="text-background text-[18px]" />
+          </span>
+          <span className="text-[17px] font-bold text-foreground">{isFemale ? "התחילי אימון חדש" : "התחל אימון חדש"}</span>
+        </div>
+      </button>
 
-      <div className="mb-4">
-        <p className="text-sm text-muted-foreground mb-2">{isFemale ? "מוכנה להתחיל?" : "מוכן להתחיל?"}</p>
-        <button
-          onClick={() => navigate("/workout")}
-          className="w-full glass-card neon-border neon-glow-box p-4 flex items-center justify-between group hover:scale-[1.02] transition-transform"
-        >
-          <span className="text-base font-bold neon-text">{isFemale ? "התחילי אימון חדש" : "התחל אימון חדש"}</span>
-          <MaterialIcon icon="play_circle" className="text-primary text-[32px] group-hover:animate-pulse-neon" />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={() => lastSession && setShowSummary(true)} className="glass-card p-3 text-right hover:neon-border transition-all">
-          <div className="flex items-center gap-1.5 mb-2">
-            <MaterialIcon icon="history" className="text-muted-foreground text-[16px]" />
-            <span className="text-[10px] text-muted-foreground">אימון אחרון</span>
+      <div className="flex gap-3 mb-3.5">
+        <div className="flex-1 glass-card p-[14px]">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[11.5px] text-muted-foreground">משקל גוף</span>
+            <MaterialIcon icon="monitor_weight" className="text-muted-foreground/70 text-[14px]" />
+          </div>
+          <p className="text-2xl font-bold tracking-tight text-foreground">
+            {currentWeight ?? "—"} <span className="text-[13px] font-medium text-muted-foreground">ק״ג</span>
+          </p>
+        </div>
+        <button onClick={() => lastSession && setShowSummary(true)} className="flex-1 glass-card p-[14px] text-right">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[11.5px] text-muted-foreground">אימון אחרון</span>
+            <MaterialIcon icon="schedule" className="text-muted-foreground/70 text-[14px]" />
           </div>
           {lastSession ? (
             <>
-              <p className="text-sm font-bold text-foreground">{lastSession.plan_name}</p>
-              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground mt-1">
-                <MaterialIcon icon="schedule" className="text-[12px]" />
+              <p className="text-lg font-bold text-foreground">{lastSession.plan_name}</p>
+              <p className="text-[11.5px] text-muted-foreground/90 mt-0.5">
                 {Math.floor(lastSession.duration_seconds / 60)} דק׳
-              </span>
+              </p>
             </>
           ) : (
             <p className="text-xs text-muted-foreground">אין עדיין</p>
           )}
         </button>
-        <div className="glass-card p-3">
-          <div className="flex items-center gap-1.5 mb-2">
-            <MaterialIcon icon="monitor_weight" className="text-muted-foreground text-[16px]" />
-            <span className="text-[10px] text-muted-foreground">משקל גוף</span>
-          </div>
-          <p className="text-2xl font-bold text-foreground">
-            {currentWeight ?? "—"}
-            <span className="text-xs text-muted-foreground mr-1">ק״ג</span>
-          </p>
-        </div>
       </div>
+
+      {/* AI Insights + Chat */}
+      <AiInsightsChat user={user} isFemale={isFemale} loadingAi={loadingAi} aiInsights={aiInsights} fetchAiInsights={fetchAiInsights} />
 
       {showSummary && lastSession && (
         <WorkoutSummaryModal

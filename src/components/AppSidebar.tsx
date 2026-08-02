@@ -117,7 +117,7 @@ const AppSidebar = ({ open, onClose, onNavigate }: Props) => {
           {user?.email?.toLowerCase() === "shirayadid806@gmail.com" && (
             <button
               onClick={() => { onNavigate("coach"); onClose(); }}
-              className="w-full glass-card p-3 flex items-center gap-3 hover:neon-border transition-all"
+              className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all"
             >
               <MaterialIcon icon="groups" className="text-primary text-[22px]" />
               <div className="text-right">
@@ -130,7 +130,7 @@ const AppSidebar = ({ open, onClose, onNavigate }: Props) => {
           {/* Other nav items */}
           <button
             onClick={() => { onNavigate("settings"); onClose(); }}
-            className="w-full glass-card p-3 flex items-center gap-3 hover:neon-border transition-all"
+            className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all"
           >
             <MaterialIcon icon="settings" className="text-muted-foreground text-[22px]" />
             <span className="text-sm font-bold text-foreground">הגדרות</span>
@@ -138,11 +138,12 @@ const AppSidebar = ({ open, onClose, onNavigate }: Props) => {
 
           <button
             onClick={() => { onNavigate("measurements"); onClose(); }}
-            className="w-full glass-card p-3 flex items-center gap-3 hover:neon-border transition-all"
+            className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all"
           >
             <MaterialIcon icon="straighten" className="text-muted-foreground text-[22px]" />
             <span className="text-sm font-bold text-foreground">מדידות</span>
           </button>
+
         </div>
 
         <div className="px-4 py-4 border-t border-border">

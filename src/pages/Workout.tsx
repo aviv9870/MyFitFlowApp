@@ -9,6 +9,7 @@ import SwapExerciseModal from "@/components/SwapExerciseModal";
 import ExerciseHistory from "@/components/ExerciseHistory";
 import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
+import { getPlanExerciseExtras, saveSetExtras, setExtrasEntryKey, type SetExtras } from "@/services/workoutExtrasLocal";
 
 interface WorkoutSet {
   weight: number;
@@ -16,6 +17,8 @@ interface WorkoutSet {
   prevWeight: number | null;
   prevReps: number | null;
   locked: boolean;
+  rpe: number | null;
+  rir: number | null;
 }
 
 interface WorkoutExercise {
@@ -24,6 +27,9 @@ interface WorkoutExercise {
   targetSets: number;
   restSeconds: number;
   repRange: string;
+  targetRpe: number | null;
+  targetRir: number | null;
+  tempo: string;
   sets: WorkoutSet[];
 }
 
@@ -205,6 +211,8 @@ const Workout = () => {
       }
     }
 
+    const planExtras = getPlanExerciseExtras(plan.id);
+
     const ts = Date.now();
     setStartTimestamp(ts);
     setExercises(
@@ -214,6 +222,9 @@ const Workout = () => {
         targetSets: pe.target_sets,
         restSeconds: pe.rest_seconds,
         repRange: getRepRange(pe.exercise_name),
+        targetRpe: planExtras[pe.exercise_id]?.targetRpe ?? null,
+        targetRir: planExtras[pe.exercise_id]?.targetRir ?? null,
+        tempo: planExtras[pe.exercise_id]?.tempo ?? "",
         sets: Array.from({ length: pe.target_sets }, (_, setIdx) => {
           const prev = prevDataPerSet[pe.exercise_name]?.[setIdx];
           return {
@@ -222,6 +233,8 @@ const Workout = () => {
             prevWeight: prev?.weight ?? null,
             prevReps: prev?.reps ?? null,
             locked: false,
+            rpe: null,
+            rir: null,
           };
         }),
       }))
@@ -233,13 +246,13 @@ const Workout = () => {
     setExercises((prev) =>
       prev.map((ex, i) =>
         i === exIdx
-          ? { ...ex, sets: [...ex.sets, { weight: 0, reps: 0, prevWeight: null, prevReps: null, locked: false }] }
+          ? { ...ex, sets: [...ex.sets, { weight: 0, reps: 0, prevWeight: null, prevReps: null, locked: false, rpe: null, rir: null }] }
           : ex
       )
     );
   };
 
-  const updateSet = (exIdx: number, setIdx: number, field: "weight" | "reps", value: number) => {
+  const updateSet = (exIdx: number, setIdx: number, field: "weight" | "reps" | "rpe" | "rir", value: number | null) => {
     setExercises((prev) =>
       prev.map((ex, i) =>
         i === exIdx
@@ -351,6 +364,18 @@ const Workout = () => {
         if (logsError) throw logsError;
       }
 
+      const setExtras: Record<string, SetExtras> = {};
+      exercises.forEach((ex) => {
+        ex.sets
+          .filter((s) => s.reps > 0)
+          .forEach((s, idx) => {
+            if (s.rpe != null || s.rir != null) {
+              setExtras[setExtrasEntryKey(ex.name, idx + 1)] = { rpe: s.rpe, rir: s.rir };
+            }
+          });
+      });
+      if (Object.keys(setExtras).length > 0) saveSetExtras(session.id, setExtras);
+
       localStorage.removeItem(WORKOUT_STORAGE_KEY);
       toast.success("האימון נשמר בהצלחה!");
       setDoneSessionId(session.id);
@@ -429,13 +454,13 @@ const Workout = () => {
       ex.sets.filter((s) => s.reps > 0).map((s) => ({ name: ex.name, weight: s.weight, reps: s.reps }))
     );
     const totalVol = completedSets.reduce((a, s) => a + s.weight * s.reps, 0);
-    const grouped: Record<string, { weight: number; reps: number; setIdx: number; exIdx: number }[]> = {};
+    const grouped: Record<string, { weight: number; reps: number; rpe: number | null; rir: number | null; setIdx: number; exIdx: number }[]> = {};
     exercises.forEach((ex, exIdx) => {
       const validSets = ex.sets
         .map((s, setIdx) => ({ ...s, setIdx, exIdx }))
         .filter((s) => s.reps > 0 || editingDone);
       if (validSets.length > 0) {
-        grouped[ex.name] = validSets.map((s) => ({ weight: s.weight, reps: s.reps, setIdx: s.setIdx, exIdx: s.exIdx }));
+        grouped[ex.name] = validSets.map((s) => ({ weight: s.weight, reps: s.reps, rpe: s.rpe, rir: s.rir, setIdx: s.setIdx, exIdx: s.exIdx }));
       }
     });
 
@@ -497,6 +522,11 @@ const Workout = () => {
                       </>
                     )}
                     <span className="flex-1 text-primary">{s.weight * s.reps}</span>
+                    {(s.rpe != null || s.rir != null) && (
+                      <span className="text-[9px] text-muted-foreground shrink-0">
+                        {s.rpe != null && `RPE ${s.rpe}`}{s.rpe != null && s.rir != null && " · "}{s.rir != null && `RIR ${s.rir}`}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -561,7 +591,7 @@ const Workout = () => {
           <div className="flex-1">
             <h2 className="text-lg font-bold text-foreground">{selectedPlan?.name}</h2>
           </div>
-          <div className="glass-card neon-border px-4 py-2 flex items-center gap-2">
+          <div className="glass-card px-4 py-2 flex items-center gap-2">
             <MaterialIcon icon="timer" className="text-primary text-[18px]" />
             <span className="text-lg font-bold neon-text font-mono">{formatTime(elapsed)}</span>
           </div>
@@ -569,7 +599,7 @@ const Workout = () => {
 
         <div className="space-y-4">
           {exercises.map((exercise, exIdx) => (
-            <div key={exIdx} className="glass-card neon-border p-4">
+            <div key={exIdx} className="glass-card p-4">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-sm font-bold text-foreground flex-1">{exercise.name}</h3>
                 <div className="flex items-center gap-1">
@@ -592,7 +622,15 @@ const Workout = () => {
                   </span>
                 </div>
               </div>
-              <p className="text-[10px] text-primary mb-3">טווח מומלץ: {exercise.repRange} חזרות</p>
+              <p className="text-[10px] text-primary mb-1">טווח מומלץ: {exercise.repRange} חזרות</p>
+              {(exercise.targetRpe != null || exercise.targetRir != null || exercise.tempo) && (
+                <p className="text-[10px] text-muted-foreground mb-3">
+                  יעד המאמן:{" "}
+                  {exercise.targetRpe != null && <span>RPE {exercise.targetRpe} </span>}
+                  {exercise.targetRir != null && <span>RIR {exercise.targetRir} </span>}
+                  {exercise.tempo && <span>טמפו {exercise.tempo}</span>}
+                </p>
+              )}
 
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground px-1">
@@ -602,56 +640,75 @@ const Workout = () => {
                   <span className="w-10"></span>
                 </div>
                 {exercise.sets.map((set, setIdx) => (
-                  <div key={setIdx} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-8 font-bold">{setIdx + 1}</span>
-                    <div className="flex-1 relative">
+                  <div key={setIdx} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-8 font-bold">{setIdx + 1}</span>
+                      <div className="flex-1 relative">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          placeholder={set.prevWeight !== null ? `${set.prevWeight}` : "ק״ג"}
+                          value={set.weight || ""}
+                          onChange={(e) => updateSet(exIdx, setIdx, "weight", Number(e.target.value))}
+                          disabled={set.locked}
+                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
+                            set.locked
+                              ? "bg-secondary/30 border-primary/30 text-primary"
+                              : "bg-secondary/50 border-border"
+                          }`}
+                        />
+                        {set.prevWeight !== null && !set.weight && !set.locked && (
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
+                            קודם
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 relative">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          placeholder={set.prevReps !== null ? `${set.prevReps}` : exercise.repRange}
+                          value={set.reps || ""}
+                          onChange={(e) => updateSet(exIdx, setIdx, "reps", Number(e.target.value))}
+                          disabled={set.locked}
+                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
+                            set.locked
+                              ? "bg-secondary/30 border-primary/30 text-primary"
+                              : "bg-secondary/50 border-border"
+                          }`}
+                        />
+                      </div>
+                      <button
+                        onClick={() => toggleSetLock(exIdx, setIdx)}
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                          set.locked
+                            ? "bg-primary neon-glow-box"
+                            : "bg-secondary/50 opacity-30 hover:opacity-60"
+                        }`}
+                      >
+                        <MaterialIcon
+                          icon={set.locked ? "check" : "check"}
+                          className={`text-[20px] ${set.locked ? "text-primary-foreground" : "text-foreground"}`}
+                        />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 pr-10">
                       <input
                         type="number"
-                        inputMode="decimal"
-                        placeholder={set.prevWeight !== null ? `${set.prevWeight}` : "ק״ג"}
-                        value={set.weight || ""}
-                        onChange={(e) => updateSet(exIdx, setIdx, "weight", Number(e.target.value))}
-                        disabled={set.locked}
-                        className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
-                          set.locked
-                            ? "bg-secondary/30 border-primary/30 text-primary"
-                            : "bg-secondary/50 border-border"
-                        }`}
+                        placeholder="RPE"
+                        value={set.rpe ?? ""}
+                        onChange={(e) => updateSet(exIdx, setIdx, "rpe", e.target.value === "" ? null : Number(e.target.value))}
+                        className="flex-1 bg-secondary/30 border border-border rounded-lg py-1 px-2 text-[11px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
                       />
-                      {set.prevWeight !== null && !set.weight && !set.locked && (
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">
-                          קודם
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 relative">
                       <input
                         type="number"
-                        inputMode="numeric"
-                        placeholder={set.prevReps !== null ? `${set.prevReps}` : exercise.repRange}
-                        value={set.reps || ""}
-                        onChange={(e) => updateSet(exIdx, setIdx, "reps", Number(e.target.value))}
-                        disabled={set.locked}
-                        className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
-                          set.locked
-                            ? "bg-secondary/30 border-primary/30 text-primary"
-                            : "bg-secondary/50 border-border"
-                        }`}
+                        placeholder="RIR"
+                        value={set.rir ?? ""}
+                        onChange={(e) => updateSet(exIdx, setIdx, "rir", e.target.value === "" ? null : Number(e.target.value))}
+                        className="flex-1 bg-secondary/30 border border-border rounded-lg py-1 px-2 text-[11px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
                       />
+                      <span className="w-10" />
                     </div>
-                    <button
-                      onClick={() => toggleSetLock(exIdx, setIdx)}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                        set.locked
-                          ? "bg-primary neon-glow-box"
-                          : "bg-secondary/50 opacity-30 hover:opacity-60"
-                      }`}
-                    >
-                      <MaterialIcon
-                        icon={set.locked ? "check" : "check"}
-                        className={`text-[20px] ${set.locked ? "text-primary-foreground" : "text-foreground"}`}
-                      />
-                    </button>
                   </div>
                 ))}
               </div>
@@ -696,14 +753,14 @@ const Workout = () => {
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => { setEditPlan(null); setPhase("edit"); }}
-          className="flex-1 glass-card neon-border p-3 flex items-center justify-center gap-2 hover:neon-glow-box transition-all"
+          className="flex-1 glass-card p-3 flex items-center justify-center gap-2 hover:neon-glow-box transition-all"
         >
           <MaterialIcon icon="add" className="text-primary text-[20px]" />
           <span className="text-sm font-bold text-foreground">תוכנית חדשה</span>
         </button>
         <button
           onClick={() => setPhase("ai")}
-          className="flex-1 glass-card neon-border p-3 flex items-center justify-center gap-2 hover:neon-glow-box transition-all"
+          className="flex-1 glass-card p-3 flex items-center justify-center gap-2 hover:neon-glow-box transition-all"
         >
           <MaterialIcon icon="auto_awesome" className="text-primary text-[20px]" />
           <span className="text-sm font-bold text-foreground">AI תוכנית</span>
@@ -719,7 +776,7 @@ const Workout = () => {
       ) : (
         <div className="space-y-3">
           {plans.map((plan) => (
-            <div key={plan.id} className="glass-card neon-border p-4">
+            <div key={plan.id} className="glass-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-right flex-1">
                   <p className="text-base font-bold text-foreground">{plan.name}</p>

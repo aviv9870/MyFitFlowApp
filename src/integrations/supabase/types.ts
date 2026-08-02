@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
@@ -109,27 +109,45 @@ export type Database = {
       }
       exercises: {
         Row: {
-          created_at: string
           description: string | null
+          equipment: string | null
           id: string
-          muscle_group: string
-          name: string
+          muscle_group: string | null
+          name: string | null
+          name_en: string
+          name_he: string
+          primary_muscle: string
+          status: string
+          submitted_by: string | null
+          video_url: string | null
           youtube_url: string | null
         }
         Insert: {
-          created_at?: string
           description?: string | null
+          equipment?: string | null
           id?: string
-          muscle_group: string
-          name: string
+          muscle_group?: string | null
+          name?: string | null
+          name_en: string
+          name_he: string
+          primary_muscle: string
+          status?: string
+          submitted_by?: string | null
+          video_url?: string | null
           youtube_url?: string | null
         }
         Update: {
-          created_at?: string
           description?: string | null
+          equipment?: string | null
           id?: string
-          muscle_group?: string
-          name?: string
+          muscle_group?: string | null
+          name?: string | null
+          name_en?: string
+          name_he?: string
+          primary_muscle?: string
+          status?: string
+          submitted_by?: string | null
+          video_url?: string | null
           youtube_url?: string | null
         }
         Relationships: []

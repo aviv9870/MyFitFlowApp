@@ -120,7 +120,7 @@ const History = ({ onClose }: { onClose?: () => void }) => {
       </div>
 
       {/* Month navigation */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => navigateMonth(-1)} className="p-1 rounded-lg hover:bg-secondary/50">
             <MaterialIcon icon="chevron_right" className="text-foreground text-[22px]" />
@@ -189,7 +189,7 @@ const History = ({ onClose }: { onClose?: () => void }) => {
       ) : (
         <div className="space-y-2">
           {sessionsForSelectedDay.map((item) => (
-            <div key={item.id} className="w-full glass-card p-3 flex items-center gap-3 hover:neon-border transition-all">
+            <div key={item.id} className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all">
               <button
                 onClick={() => setSummarySession(item)}
                 className="flex items-center gap-3 flex-1 text-right"

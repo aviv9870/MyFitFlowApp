@@ -266,7 +266,7 @@ const Analytics = () => {
       </div>
 
       {/* Muscle Distribution - Bar Chart */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <button
           onClick={handleToggleProgress}
           className="w-full flex items-center justify-between"
@@ -385,7 +385,7 @@ const Analytics = () => {
       </div>
 
       {/* AI Insights */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <MaterialIcon icon="psychology" className="text-primary text-[20px]" />

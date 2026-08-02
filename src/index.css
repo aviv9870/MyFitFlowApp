@@ -7,49 +7,53 @@
 
 @layer base {
   :root {
-    --background: 220 20% 7%;
-    --foreground: 0 0% 95%;
+    /* MyFitFlow design system — Claude Design handoff (Dashboard Redesign), OKLCH tokens */
+    --background: 0.14 0.01 250;
+    --foreground: 0.96 0.004 250;
 
-    --card: 220 18% 10%;
-    --card-foreground: 0 0% 95%;
+    --card: 0.19 0.012 250;
+    --card-foreground: 0.96 0.004 250;
+    --card-elevated: 0.24 0.02 250;
 
-    --popover: 220 18% 10%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 0.19 0.012 250;
+    --popover-foreground: 0.96 0.004 250;
 
-    --primary: 145 100% 50%;
-    --primary-foreground: 220 20% 7%;
+    --primary: 0.72 0.14 150;
+    --primary-hover: 0.8 0.14 150;
+    --primary-foreground: 0.14 0.01 250;
 
-    --secondary: 220 15% 16%;
-    --secondary-foreground: 0 0% 85%;
+    --secondary: 0.24 0.015 250;
+    --secondary-foreground: 0.85 0.006 250;
 
-    --muted: 220 15% 14%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 0.22 0.013 250;
+    --muted-foreground: 0.62 0.01 250;
 
-    --accent: 145 80% 42%;
-    --accent-foreground: 220 20% 7%;
+    --accent: 0.72 0.14 150;
+    --accent-foreground: 0.14 0.01 250;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 95%;
+    --destructive: 0.6 0.2 25;
+    --destructive-foreground: 0.96 0.004 250;
 
-    --border: 220 15% 18%;
-    --input: 220 15% 18%;
-    --ring: 145 100% 50%;
+    /* hairline dividers: near-white at low alpha, not a solid border color */
+    --border: 1 0 0;
+    --input: 0.3 0.014 250;
+    --ring: 0.72 0.14 150;
 
     --radius: 1rem;
 
-    --neon-glow: 145 100% 50%;
-    --neon-cyan: 180 100% 50%;
-    --neon-purple: 270 100% 65%;
-    --surface-glass: 220 15% 12%;
+    --neon-glow: 0.72 0.14 150;
+    --neon-cyan: 0.75 0.13 200;
+    --neon-purple: 0.68 0.17 300;
+    --surface-glass: 0.19 0.012 250;
 
-    --sidebar-background: 220 18% 10%;
-    --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 145 100% 50%;
-    --sidebar-primary-foreground: 220 20% 7%;
-    --sidebar-accent: 220 15% 16%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 220 15% 18%;
-    --sidebar-ring: 145 100% 50%;
+    --sidebar-background: 0.19 0.012 250;
+    --sidebar-foreground: 0.96 0.004 250;
+    --sidebar-primary: 0.72 0.14 150;
+    --sidebar-primary-foreground: 0.14 0.01 250;
+    --sidebar-accent: 0.24 0.015 250;
+    --sidebar-accent-foreground: 0.96 0.004 250;
+    --sidebar-border: 1 0 0;
+    --sidebar-ring: 0.72 0.14 150;
   }
 }
 
@@ -70,21 +74,33 @@
 
 @layer utilities {
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl;
+    @apply bg-card rounded-[20px];
+  }
+
+  .card-elevated {
+    background: linear-gradient(160deg, oklch(var(--card-elevated)), oklch(var(--card)));
+    box-shadow: 0 10px 30px -8px oklch(var(--primary) / 0.22);
+    @apply rounded-[20px];
   }
 
   .neon-text {
-    color: hsl(var(--primary));
-    text-shadow: 0 0 10px hsl(var(--primary) / 0.5), 0 0 30px hsl(var(--primary) / 0.2);
+    color: oklch(var(--primary));
   }
 
   .neon-border {
-    border-color: hsl(var(--primary) / 0.4);
-    box-shadow: 0 0 15px hsl(var(--primary) / 0.1), inset 0 0 15px hsl(var(--primary) / 0.05);
+    border-color: oklch(var(--primary) / 0.35);
   }
 
   .neon-glow-box {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.15), 0 0 60px hsl(var(--primary) / 0.05);
+    box-shadow: 0 10px 30px -8px oklch(var(--primary) / 0.22);
+  }
+
+  .hairline-t {
+    border-top: 1px solid oklch(var(--border) / 0.06);
+  }
+
+  .hairline-b {
+    border-bottom: 1px solid oklch(var(--border) / 0.06);
   }
 
   .material-icon {

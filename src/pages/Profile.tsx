@@ -95,7 +95,7 @@ const Profile = () => {
         </div>
       </div>
 
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="monitor_weight" className="text-primary text-[18px]" />
           עדכון משקל גוף
@@ -120,7 +120,7 @@ const Profile = () => {
       {/* Measurements button */}
       <button
         onClick={() => setView("measurements")}
-        className="w-full glass-card neon-border p-4 mb-4 flex items-center gap-3 hover:neon-glow-box transition-all"
+        className="w-full glass-card p-4 mb-4 flex items-center gap-3 hover:neon-glow-box transition-all"
       >
         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
           <MaterialIcon icon="straighten" className="text-primary text-[20px]" />

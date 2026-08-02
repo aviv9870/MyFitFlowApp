@@ -5,14 +5,78 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const GEMINI_MODEL = "gemini-2.0-flash";
+
+async function callGemini(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  toolName: string,
+  toolParams: any,
+  signal: AbortSignal,
+): Promise<any> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: toolName,
+              description: `Provide ${toolName} data`,
+              parameters: toolParams,
+            },
+          ],
+        },
+      ],
+      toolConfig: {
+        functionCallingConfig: { mode: "ANY", allowedFunctionNames: [toolName] },
+      },
+      generationConfig: { temperature: 0.7 },
+    }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      const err = new Error("יותר מדי בקשות, נסה שוב בעוד רגע") as any;
+      err.status = 429;
+      throw err;
+    }
+    if (response.status === 403) {
+      const err = new Error("GEMINI_API_KEY אינו תקף או חסר הרשאה") as any;
+      err.status = 403;
+      throw err;
+    }
+    const text = await response.text();
+    console.error("Gemini error:", response.status, text);
+    throw new Error("Gemini API error: " + response.status);
+  }
+
+  const data = await response.json();
+  const part = data.candidates?.[0]?.content?.parts?.[0];
+  if (!part?.functionCall) {
+    console.error("Unexpected Gemini response:", JSON.stringify(data));
+    throw new Error("תגובה לא צפויה מ-Gemini");
+  }
+
+  return part.functionCall.args;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const body = await req.json();
     const { type } = body;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     let systemPrompt = "";
     let userPrompt = "";
@@ -31,11 +95,10 @@ serve(async (req) => {
           recommendation: { type: "string" },
         },
         required: ["insights", "recommendation"],
-        additionalProperties: false,
       };
     } else if (type === "generate_plan") {
       const { goal, daysPerWeek, sessionDuration, focusMuscles, history } = body;
-      systemPrompt = `אתה מאמן כושר מקצועי שיוצר תוכניות אימון מותאמות אישית בעברית. 
+      systemPrompt = `אתה מאמן כושר מקצועי שיוצר תוכניות אימון מותאמות אישית בעברית.
 חשוב מאוד: השתמש רק בשמות תרגילים מהרשימה הבאה (בעברית בלבד):
 חזה: לחיצת חזה עם מוט, לחיצת חזה עם משקולות יד, לחיצת חזה בשיפוע חיובי (מוט), לחיצת חזה בשיפוע חיובי (משקולות), לחיצת חזה בשיפוע שלילי, פרפר עם משקולות יד, פרפר במכונה (Pec Deck), קרוס-אובר כבלים (גבוה), קרוס-אובר כבלים (נמוך), לחיצת חזה במכונה (Chest Press), שכיבות סמיכה (קלאסי), מקבילים רחב (דגש חזה), לחיצת חזה במכונת סמית׳
 גב: מתח באחיזה רחבה, מתח באחיזה צרה (צ׳ין אפס), פולי עליון באחיזה רחבה, פולי עליון באחיזה צרה (ידית V), חתירה במוט (Bent Over Row), חתירה עם משקולת יד (מסור), חתירה במכונה בישיבה, חתירה בכבלים (Seated Row), חתירה במוט T (T-Bar Row), פול-אובר בכבלים (ידיים ישרות), דדליפט קלאסי, פשיטת גב במכשיר (Hyper-extension), דדליפט סומו
@@ -46,13 +109,11 @@ serve(async (req) => {
 בטן: כפיפות בטן (Crunches), הרמת רגליים בשכיבה, הרמת רגליים בתלייה, פלאנק (Plank), "אופניים" בבטן, גלגל בטן (Ab Wheel), רוסיאן טוויסט
 
 בנה תוכנית אימון לפי הפרמטרים שהמשתמש ביקש.`;
-
       userPrompt = `מטרה: ${goal}
 ימי אימון בשבוע: ${daysPerWeek ?? 4}
 זמן כל אימון: ${sessionDuration ?? 60} דקות
 ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", ")}` : "ללא מיקוד ספציפי"}
 היסטוריית אימונים: ${JSON.stringify(history ?? [])}`;
-
       toolName = "provide_plan";
       toolParams = {
         type: "object",
@@ -69,12 +130,10 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
                 rest_seconds: { type: "number" },
               },
               required: ["name", "target_sets", "rest_seconds"],
-              additionalProperties: false,
             },
           },
         },
         required: ["name", "description", "exercises"],
-        additionalProperties: false,
       };
     } else if (type === "analyze_measurements") {
       const { measurements } = body;
@@ -85,11 +144,21 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
         type: "object",
         properties: {
           summary: { type: "string" },
-          changes: { type: "array", items: { type: "object", properties: { area: { type: "string" }, change: { type: "string" }, trend: { type: "string" } }, required: ["area", "change", "trend"], additionalProperties: false } },
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                area: { type: "string" },
+                change: { type: "string" },
+                trend: { type: "string" },
+              },
+              required: ["area", "change", "trend"],
+            },
+          },
           recommendation: { type: "string" },
         },
         required: ["summary", "changes", "recommendation"],
-        additionalProperties: false,
       };
     } else if (type === "analyze_single_workout") {
       const { workout, genderContext } = body;
@@ -106,7 +175,6 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
           recommendation: { type: "string" },
         },
         required: ["insights", "recommendation"],
-        additionalProperties: false,
       };
     } else if (type === "coach_report") {
       const { traineeName, history } = body;
@@ -119,7 +187,6 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
           report: { type: "string" },
         },
         required: ["report"],
-        additionalProperties: false,
       };
     } else if (type === "chat") {
       const { question, history } = body;
@@ -132,73 +199,33 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
           answer: { type: "string" },
         },
         required: ["answer"],
-        additionalProperties: false,
       };
     } else {
       throw new Error("Unknown type: " + type);
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: toolName,
-              description: `Provide ${type} data`,
-              parameters: toolParams,
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: toolName } },
-      }),
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "יותר מדי בקשות, נסה שוב בעוד רגע" }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "נדרש חידוש מנוי" }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const t = await response.text();
-      console.error("AI error:", response.status, t);
-      throw new Error("AI gateway error");
+    try {
+      const result = await callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+      clearTimeout(timeoutId);
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      throw e;
     }
-
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    const result = toolCall ? JSON.parse(toolCall.function.arguments) : null;
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
+  } catch (e: any) {
     console.error("Error:", e);
     const isTimeout = e instanceof Error && e.name === "AbortError";
-    const message = isTimeout ? "הבקשה לשרת AI לא הושלמה בזמן, נסה שוב" : (e instanceof Error ? e.message : "Unknown error");
+    const message = isTimeout
+      ? "הבקשה לשרת AI לא הושלמה בזמן, נסה שוב"
+      : (e instanceof Error ? e.message : "Unknown error");
+    const status = e.status || (isTimeout ? 504 : 500);
     return new Response(JSON.stringify({ error: message }), {
-      status: isTimeout ? 504 : 500,
+      status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

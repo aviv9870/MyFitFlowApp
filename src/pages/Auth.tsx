@@ -48,7 +48,7 @@ const Auth = () => {
           <p className="text-muted-foreground text-sm">אפליקציית כושר חכמה</p>
         </div>
 
-        <div className="glass-card neon-border p-6">
+        <div className="glass-card p-6">
           <h2 className="text-lg font-bold text-foreground mb-4 text-center">
             {isLogin ? "התחברות" : "הרשמה"}
           </h2>

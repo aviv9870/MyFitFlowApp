@@ -76,7 +76,7 @@ const SwapExerciseModal = ({ currentExerciseName, onSwap, onClose }: Props) => {
           <button
             key={ex.id}
             onClick={() => onSwap(ex)}
-            className="w-full glass-card p-3 flex items-center gap-3 hover:neon-border transition-all text-right"
+            className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all text-right"
           >
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <MaterialIcon icon="fitness_center" className="text-primary text-[16px]" />

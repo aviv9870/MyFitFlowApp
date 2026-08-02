@@ -1,15 +1,17 @@
-const COLOR_MAP: Record<string, { primary: string; accent: string; ring: string; neon: string }> = {
-  green:  { primary: "145 100% 50%", accent: "145 80% 42%", ring: "145 100% 50%", neon: "145 100% 50%" },
-  cyan:   { primary: "180 100% 50%", accent: "180 80% 42%", ring: "180 100% 50%", neon: "180 100% 50%" },
-  purple: { primary: "270 100% 65%", accent: "270 80% 55%", ring: "270 100% 65%", neon: "270 100% 65%" },
-  orange: { primary: "25 100% 55%",  accent: "25 80% 48%",  ring: "25 100% 55%",  neon: "25 100% 55%"  },
-  pink:   { primary: "330 100% 60%", accent: "330 80% 52%", ring: "330 100% 60%", neon: "330 100% 60%" },
+// OKLCH component triples (L C H), matching the Claude Design handoff palette
+const COLOR_MAP: Record<string, { primary: string; hover: string; accent: string; ring: string; neon: string }> = {
+  green:  { primary: "0.72 0.14 150", hover: "0.8 0.14 150", accent: "0.6 0.13 150", ring: "0.72 0.14 150", neon: "0.72 0.14 150" },
+  cyan:   { primary: "0.75 0.13 200", hover: "0.82 0.13 200", accent: "0.62 0.12 200", ring: "0.75 0.13 200", neon: "0.75 0.13 200" },
+  purple: { primary: "0.68 0.17 300", hover: "0.76 0.17 300", accent: "0.56 0.16 300", ring: "0.68 0.17 300", neon: "0.68 0.17 300" },
+  orange: { primary: "0.75 0.15 60",  hover: "0.82 0.15 60",  accent: "0.62 0.14 60",  ring: "0.75 0.15 60",  neon: "0.75 0.15 60"  },
+  pink:   { primary: "0.72 0.18 340", hover: "0.8 0.18 340",  accent: "0.6 0.17 340",  ring: "0.72 0.18 340", neon: "0.72 0.18 340" },
 };
 
 export const applyTheme = (colorId: string) => {
   const root = document.documentElement;
   const c = COLOR_MAP[colorId] ?? COLOR_MAP.green;
   root.style.setProperty("--primary", c.primary);
+  root.style.setProperty("--primary-hover", c.hover);
   root.style.setProperty("--accent", c.accent);
   root.style.setProperty("--ring", c.ring);
   root.style.setProperty("--neon-glow", c.neon);

@@ -135,7 +135,7 @@ const AIPlanGenerator = ({ onPlanCreated, onCancel }: Props) => {
   if (result) {
     return (
       <div className="space-y-4">
-        <div className="glass-card neon-border p-4">
+        <div className="glass-card p-4">
           <div className="flex items-center gap-2 mb-2">
             <MaterialIcon icon="auto_awesome" className="text-primary text-[20px]" />
             <h3 className="text-base font-bold text-foreground">{result.name}</h3>

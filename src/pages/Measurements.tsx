@@ -136,7 +136,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* New measurement form */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
           <MaterialIcon icon="add_circle" className="text-primary text-[18px]" />
           מדידה חדשה
@@ -211,7 +211,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
       )}
 
       {/* Progress Graph */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <button
           onClick={() => setShowGraph(!showGraph)}
           className="w-full flex items-center justify-between"
@@ -287,7 +287,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       {/* AI Analysis */}
-      <div className="glass-card neon-border p-4 mb-4">
+      <div className="glass-card p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
             <MaterialIcon icon="auto_awesome" className="text-primary text-[18px]" />

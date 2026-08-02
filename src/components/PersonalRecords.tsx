@@ -117,7 +117,7 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
   if (loading || records.length === 0) return null;
 
   const Card = (
-    <div ref={cardRef} className="glass-card neon-border p-5 w-full" style={{ direction: "rtl" }}>
+    <div ref={cardRef} className="glass-card p-5 w-full" style={{ direction: "rtl" }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <MaterialIcon icon="emoji_events" className="text-yellow-400 text-[24px]" />

@@ -230,7 +230,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
       </div>
 
       <div className="px-4 mb-4">
-        <div className="glass-card neon-border p-4">
+        <div className="glass-card p-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold neon-text mb-1">{planName}</h3>
@@ -288,7 +288,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
       {/* AI Analysis */}
       {aiAnalysis && (
         <div className="px-4 mb-4">
-          <div className="glass-card neon-border p-4">
+          <div className="glass-card p-4">
             <div className="flex items-center gap-2 mb-3">
               <MaterialIcon icon="auto_awesome" className="text-primary text-[18px]" />
               <h4 className="text-sm font-bold text-foreground">ניתוח AI</h4>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useNavigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,10 +12,20 @@ import Workout from "@/pages/Workout";
 import History from "@/pages/History";
 import Profile from "@/pages/Profile";
 import Analytics from "@/pages/Analytics";
+import Nutrition from "@/pages/Nutrition";
+import CoachDashboard from "@/pages/CoachDashboard";
+import TrainerTest from "@/pages/TrainerTest";
 import Auth from "@/pages/Auth";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
+
+// Local-only direct entry point to the coach dashboard, bypassing the
+// production email gate in AppSidebar (see MyFitFlow spec: solo-coach model).
+const CoachRoute = () => {
+  const navigate = useNavigate();
+  return <CoachDashboard onClose={() => navigate("/")} />;
+};
 
 const ProtectedRoutes = () => {
   const { user, loading } = useAuth();
@@ -36,6 +46,9 @@ const ProtectedRoutes = () => {
         <Route path="/" element={<Dashboard />} />
         <Route path="/exercises" element={<Exercises />} />
         <Route path="/workout" element={<Workout />} />
+        <Route path="/nutrition" element={<Nutrition />} />
+        <Route path="/coach" element={<CoachRoute />} />
+        <Route path="/trainer-test" element={<TrainerTest />} />
         <Route path="/history" element={<History />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/analytics" element={<Analytics />} />

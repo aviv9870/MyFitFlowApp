@@ -62,11 +62,13 @@ const AiInsightsChat = ({ user, isFemale, loadingAi, aiInsights, fetchAiInsights
   };
 
   return (
-    <div className="glass-card neon-border p-4 mb-4">
+    <div className="hairline-t pt-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <MaterialIcon icon="auto_awesome" className="text-primary text-[20px]" />
-          <h3 className="text-sm font-semibold text-foreground">AI תובנות ותכנון</h3>
+          <span className="w-5 h-5 rounded-md bg-primary/15 flex items-center justify-center">
+            <MaterialIcon icon="auto_awesome" className="text-primary text-[13px]" />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground">תובנות ותכנון AI</h3>
         </div>
         <button onClick={fetchAiInsights} disabled={loadingAi} className="text-xs text-primary flex items-center gap-1">
           <MaterialIcon icon={loadingAi ? "hourglass_top" : "refresh"} className={`text-[14px] ${loadingAi ? "animate-spin" : ""}`} />
@@ -108,7 +110,7 @@ const AiInsightsChat = ({ user, isFemale, loadingAi, aiInsights, fetchAiInsights
       </button>
 
       {chatOpen && (
-        <div className="mt-3 pt-3 border-t border-border">
+        <div className="mt-3 pt-3 hairline-t">
           <div className="max-h-40 overflow-y-auto space-y-2 mb-3">
             {messages.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-3">שאל שאלה על אימונים, תזונה, או התקדמות</p>
