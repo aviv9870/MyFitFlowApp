@@ -16,6 +16,7 @@ import Nutrition from "@/pages/Nutrition";
 import CoachDashboard from "@/pages/CoachDashboard";
 import TrainerTest from "@/pages/TrainerTest";
 import Auth from "@/pages/Auth";
+import Onboarding from "@/pages/Onboarding";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,9 +29,9 @@ const CoachRoute = () => {
 };
 
 const ProtectedRoutes = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, needsOnboarding } = useAuth();
 
-  if (loading) {
+  if (loading || (user && needsOnboarding === null)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <span className="neon-text text-xl font-bold animate-pulse-neon">MyFitFlow</span>
@@ -39,6 +40,8 @@ const ProtectedRoutes = () => {
   }
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  if (needsOnboarding) return <Onboarding />;
 
   return (
     <>

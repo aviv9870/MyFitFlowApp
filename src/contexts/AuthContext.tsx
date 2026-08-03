@@ -7,6 +7,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  needsOnboarding: boolean | null; // null = not yet known
+  markOnboarded: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -14,6 +16,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  needsOnboarding: null,
+  markOnboarded: () => {},
   signOut: async () => {},
 });
 
@@ -23,6 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
 
   // Development mode: bypass Supabase auth with mock user
   const DEV_MODE = false;
@@ -60,17 +65,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    supabase.from("user_settings").select("theme_color").eq("user_id", user.id).single()
-      .then(({ data }) => { if (data?.theme_color) applyTheme(data.theme_color); });
+    if (!user) {
+      setNeedsOnboarding(null);
+      return;
+    }
+    supabase.from("user_settings").select("theme_color, onboarded").eq("user_id", user.id).single()
+      .then(({ data }) => {
+        if (data?.theme_color) applyTheme(data.theme_color);
+        setNeedsOnboarding(data ? !data.onboarded : false);
+      });
   }, [user?.id]);
+
+  const markOnboarded = () => setNeedsOnboarding(false);
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, needsOnboarding, markOnboarded, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -186,6 +186,7 @@ export type Database = {
           gender: string | null
           height_cm: number | null
           id: string
+          onboarded: boolean
           theme_color: string | null
           updated_at: string
           user_id: string
@@ -196,6 +197,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id?: string
+          onboarded?: boolean
           theme_color?: string | null
           updated_at?: string
           user_id: string
@@ -206,6 +208,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id?: string
+          onboarded?: boolean
           theme_color?: string | null
           updated_at?: string
           user_id?: string
@@ -363,6 +366,14 @@ export type Database = {
       coach_has_access: {
         Args: { _coach_email: string; _trainee_id: string }
         Returns: boolean
+      }
+      coach_has_access_to_submitter: {
+        Args: { _submitted_by: string }
+        Returns: boolean
+      }
+      current_user_email: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
     }
     Enums: {
