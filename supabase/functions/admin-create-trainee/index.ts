@@ -62,7 +62,10 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error("admin-create-trainee error:", err);
-    const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
+    let message = err instanceof Error ? err.message : "שגיאה לא ידועה";
+    if (/rate limit/i.test(message)) {
+      message = "הגעת למגבלת שליחת מיילים של Supabase (השירות המובנה מוגבל מאוד) — נסה שוב בעוד כמה דקות, או הגדר SMTP מותאם אישית ב-Dashboard לשליחה אמינה";
+    }
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

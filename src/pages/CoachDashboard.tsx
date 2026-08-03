@@ -40,6 +40,22 @@ const MACRO_LABELS: { key: keyof MacroTotals; label: string; unit: string }[] = 
   { key: "fat", label: "שומן", unit: "ג׳" },
 ];
 
+// supabase.functions.invoke() only sets a generic "non-2xx status code" message on
+// error — the edge function's actual { error: "..." } body is on error.context (a
+// Response), so it has to be read out explicitly to show something useful.
+const getEdgeFunctionErrorMessage = async (error: unknown, fallback: string): Promise<string> => {
+  const context = (error as { context?: Response })?.context;
+  if (context && typeof context.json === "function") {
+    try {
+      const body = await context.json();
+      if (body?.error) return body.error;
+    } catch {
+      // response body wasn't JSON — fall through to the generic message
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
+};
+
 const MUSCLE_COLORS: Record<string, string> = {
   "חזה": "#FF6B6B", "גב": "#4ECDC4", "כתפיים": "#45B7D1", "רגליים": "#96CEB4",
   "יד קדמית": "#FFEAA7", "יד אחורית": "#DDA0DD", "בטן": "#FF8C42",
@@ -184,7 +200,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
         body: { traineeId: trainee.trainee_id, ban: true },
         headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getEdgeFunctionErrorMessage(error, "שגיאה בחסימת המתאמן"));
       if (data?.error) throw new Error(data.error);
 
       const { error: unlinkError } = await supabase.from("coach_permissions").delete().eq("id", trainee.permission_id);
@@ -219,7 +235,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
         },
         headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getEdgeFunctionErrorMessage(error, "שגיאה ביצירת חשבון"));
       if (data?.error) throw new Error(data.error);
 
       toast.success("נשלחה הזמנה במייל ללקוח החדש");
