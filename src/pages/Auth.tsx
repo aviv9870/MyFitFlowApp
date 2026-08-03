@@ -2,32 +2,21 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import MaterialIcon from "@/components/MaterialIcon";
 
+// Invite-only: accounts are created by the admin (see admin-create-trainee),
+// so this screen only signs existing users in — no self-signup form.
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setMessage("");
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      });
-      if (error) setError(error.message);
-      else setMessage("בדוק את האימייל שלך לאישור ההרשמה");
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError(error.message);
     setLoading(false);
   };
 
@@ -49,9 +38,7 @@ const Auth = () => {
         </div>
 
         <div className="glass-card p-6">
-          <h2 className="text-lg font-bold text-foreground mb-4 text-center">
-            {isLogin ? "התחברות" : "הרשמה"}
-          </h2>
+          <h2 className="text-lg font-bold text-foreground mb-4 text-center">התחברות</h2>
 
           <button
             onClick={handleGoogleSignIn}
@@ -86,25 +73,18 @@ const Auth = () => {
             />
 
             {error && <p className="text-destructive text-xs">{error}</p>}
-            {message && <p className="text-primary text-xs">{message}</p>}
 
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-primary text-primary-foreground py-2.5 rounded-xl font-bold text-sm neon-glow-box disabled:opacity-50"
             >
-              {loading ? "..." : isLogin ? "התחבר" : "הרשם"}
+              {loading ? "..." : "התחבר"}
             </button>
           </form>
 
-          <p className="text-center text-xs text-muted-foreground mt-4">
-            {isLogin ? "אין לך חשבון?" : "יש לך חשבון?"}
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-primary font-bold mr-1"
-            >
-              {isLogin ? "הרשם" : "התחבר"}
-            </button>
+          <p className="text-center text-[10px] text-muted-foreground mt-4">
+            הגישה למערכת היא בהזמנה בלבד מהמאמן שלך
           </p>
         </div>
       </div>

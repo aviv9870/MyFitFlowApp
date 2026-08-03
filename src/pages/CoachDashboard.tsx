@@ -82,6 +82,8 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [newClientName, setNewClientName] = useState("");
   const [creatingClient, setCreatingClient] = useState(false);
   const [traineeSearch, setTraineeSearch] = useState("");
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [removingTrainee, setRemovingTrainee] = useState(false);
 
   // AI
   const [aiQuestion, setAiQuestion] = useState("");
@@ -173,14 +175,30 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     setLoading(false);
   };
 
-  const removeTrainee = async (permissionId: string) => {
-    const { error } = await supabase.from("coach_permissions").delete().eq("id", permissionId);
-    if (error) {
-      toast.error("שגיאה בהסרת המתאמן");
-      return;
+  const removeTrainee = async (trainee: Trainee) => {
+    if (removingTrainee) return;
+    setRemovingTrainee(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke("admin-ban-trainee", {
+        body: { traineeId: trainee.trainee_id, ban: true },
+        headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const { error: unlinkError } = await supabase.from("coach_permissions").delete().eq("id", trainee.permission_id);
+      if (unlinkError) throw unlinkError;
+
+      setTrainees((prev) => prev.filter((t) => t.permission_id !== trainee.permission_id));
+      toast.success("הגישה של המתאמן נחסמה והוא הוסר מהרשימה");
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "שגיאה בחסימת המתאמן");
+    } finally {
+      setRemovingTrainee(false);
+      setConfirmRemoveId(null);
     }
-    setTrainees((prev) => prev.filter((t) => t.permission_id !== permissionId));
-    toast.success("המתאמן הוסר");
   };
 
   const filteredTrainees = useMemo(
@@ -654,33 +672,56 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
               <div className="space-y-2">
-                {filteredTrainees.map((t) => (
-                  <div
-                    key={t.trainee_id}
-                    onClick={() => selectTrainee(t)}
-                    className="w-full glass-card p-4 flex items-center gap-3 hover:scale-[1.01] transition-transform cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
-                      <MaterialIcon icon="person" className="text-primary text-[22px]" />
+                {filteredTrainees.map((t) =>
+                  confirmRemoveId === t.permission_id ? (
+                    <div key={t.trainee_id} className="glass-card p-4 border border-destructive/40 space-y-2">
+                      <p className="text-sm font-bold text-foreground">לחסום את הגישה של {t.display_name}?</p>
+                      <p className="text-[10px] text-muted-foreground">החשבון יינעל לחלוטין ולא יוכל להתחבר יותר. הקישור שלך אליו יוסר. לא ניתן לבטל פעולה זו.</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => removeTrainee(t)}
+                          disabled={removingTrainee}
+                          className="flex-1 bg-destructive text-destructive-foreground py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                          {removingTrainee ? "חוסם..." : "כן, חסום והסר"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmRemoveId(null)}
+                          disabled={removingTrainee}
+                          className="px-3 bg-secondary/50 text-muted-foreground rounded-lg text-xs font-bold"
+                        >
+                          ביטול
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-right flex-1">
-                      <p className="text-sm font-bold text-foreground">{t.display_name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {t.last_active
-                          ? `אימון אחרון: ${new Date(t.last_active).toLocaleDateString("he-IL")}`
-                          : "עדיין לא התאמן"}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeTrainee(t.permission_id); }}
-                      className="p-1.5 rounded-lg hover:bg-destructive/15 text-muted-foreground hover:text-destructive"
-                      title="הסר מתאמן"
+                  ) : (
+                    <div
+                      key={t.trainee_id}
+                      onClick={() => selectTrainee(t)}
+                      className="w-full glass-card p-4 flex items-center gap-3 hover:scale-[1.01] transition-transform cursor-pointer"
                     >
-                      <MaterialIcon icon="person_remove" className="text-[18px]" />
-                    </button>
-                    <MaterialIcon icon="chevron_left" className="text-muted-foreground text-[20px]" />
-                  </div>
-                ))}
+                      <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                        <MaterialIcon icon="person" className="text-primary text-[22px]" />
+                      </div>
+                      <div className="text-right flex-1">
+                        <p className="text-sm font-bold text-foreground">{t.display_name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t.last_active
+                            ? `אימון אחרון: ${new Date(t.last_active).toLocaleDateString("he-IL")}`
+                            : "עדיין לא התאמן"}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(t.permission_id); }}
+                        className="p-1.5 rounded-lg hover:bg-destructive/15 text-muted-foreground hover:text-destructive"
+                        title="חסום והסר מתאמן"
+                      >
+                        <MaterialIcon icon="person_remove" className="text-[18px]" />
+                      </button>
+                      <MaterialIcon icon="chevron_left" className="text-muted-foreground text-[20px]" />
+                    </div>
+                  )
+                )}
                 {filteredTrainees.length === 0 && (
                   <p className="text-center text-muted-foreground text-sm mt-6">לא נמצאו מתאמנים תואמים</p>
                 )}
