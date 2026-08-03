@@ -152,6 +152,148 @@ export type Database = {
         }
         Relationships: []
       }
+      nutrition_adherence_logs: {
+        Row: {
+          adherence_pct: number
+          created_at: string
+          id: string
+          log_date: string
+          user_id: string
+        }
+        Insert: {
+          adherence_pct: number
+          created_at?: string
+          id?: string
+          log_date: string
+          user_id: string
+        }
+        Update: {
+          adherence_pct?: number
+          created_at?: string
+          id?: string
+          log_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      nutrition_eaten_logs: {
+        Row: {
+          created_at: string
+          id: string
+          log_date: string
+          meal_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          log_date: string
+          meal_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          log_date?: string
+          meal_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_eaten_logs_meal_id_fkey"
+            columns: ["meal_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_meals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nutrition_meal_items: {
+        Row: {
+          custom_calories: number | null
+          custom_carbs: number | null
+          custom_fat: number | null
+          custom_name: string | null
+          custom_protein: number | null
+          food_id: string | null
+          grams: number | null
+          id: string
+          meal_id: string
+          order_index: number
+        }
+        Insert: {
+          custom_calories?: number | null
+          custom_carbs?: number | null
+          custom_fat?: number | null
+          custom_name?: string | null
+          custom_protein?: number | null
+          food_id?: string | null
+          grams?: number | null
+          id?: string
+          meal_id: string
+          order_index?: number
+        }
+        Update: {
+          custom_calories?: number | null
+          custom_carbs?: number | null
+          custom_fat?: number | null
+          custom_name?: string | null
+          custom_protein?: number | null
+          food_id?: string | null
+          grams?: number | null
+          id?: string
+          meal_id?: string
+          order_index?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_meal_items_meal_id_fkey"
+            columns: ["meal_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_meals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nutrition_meals: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          order_index: number
+          target_calories: number
+          target_carbs: number
+          target_fat: number
+          target_protein: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          order_index?: number
+          target_calories?: number
+          target_carbs?: number
+          target_fat?: number
+          target_protein?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          order_index?: number
+          target_calories?: number
+          target_carbs?: number
+          target_fat?: number
+          target_protein?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

@@ -15,7 +15,9 @@ import {
   type DayMeal,
   type MacroTotals,
 } from "@/domain/nutrition-calculations";
-import { getTodayView, toggleMealEaten, recordDayAdherence, todayKey } from "@/services/nutritionLocal";
+import { fetchTodayView, toggleMealEaten, recordDayAdherence, todayKey } from "@/services/nutrition";
+import * as nutritionLocal from "@/services/nutritionLocal";
+import { MOCK_TRAINEE_ID } from "@/services/mockTraineeData";
 import AdherenceTrend from "@/components/AdherenceTrend";
 
 const MACRO_LABELS: { key: keyof MacroTotals; label: string; unit: string }[] = [
@@ -48,21 +50,39 @@ const Nutrition = ({ onClose, traineeIdOverride }: Props) => {
   const today = todayKey();
   const traineeId = traineeIdOverride ?? user?.id;
 
+  const isMock = traineeId === MOCK_TRAINEE_ID;
+
   useEffect(() => {
     if (!traineeId) return;
-    setMeals(getTodayView(traineeId, today));
-    setLoaded(true);
-  }, [traineeId, today]);
+    setLoaded(false);
+    if (isMock) {
+      setMeals(nutritionLocal.getTodayView(traineeId, today));
+      setLoaded(true);
+      return;
+    }
+    fetchTodayView(traineeId, today)
+      .then(setMeals)
+      .catch((err) => console.error(err))
+      .finally(() => setLoaded(true));
+  }, [traineeId, today, isMock]);
 
-  const toggleEaten = (mealId: string) => {
+  const toggleEaten = async (mealId: string) => {
     if (!traineeId) return;
-    toggleMealEaten(traineeId, today, mealId);
-    const updated = getTodayView(traineeId, today);
+    let updated: DayMeal[];
+    if (isMock) {
+      nutritionLocal.toggleMealEaten(traineeId, today, mealId);
+      updated = nutritionLocal.getTodayView(traineeId, today);
+    } else {
+      await toggleMealEaten(traineeId, today, mealId);
+      updated = await fetchTodayView(traineeId, today);
+    }
     setMeals(updated);
     // Snapshot today's adherence so it feeds the weekly trend.
     const consumed = eatenMacros(updated, foodsById);
     const target = dayTargetMacros(updated);
-    recordDayAdherence(traineeId, today, dayAdherencePct(consumed, target));
+    const adherence = dayAdherencePct(consumed, target);
+    if (isMock) nutritionLocal.recordDayAdherence(traineeId, today, adherence);
+    else await recordDayAdherence(traineeId, today, adherence);
     setAdherenceTick((t) => t + 1);
   };
 
@@ -131,7 +151,7 @@ const Nutrition = ({ onClose, traineeIdOverride }: Props) => {
           {/* Weekly adherence trend */}
           {traineeId && (
             <div className="mb-4">
-              <AdherenceTrend traineeId={traineeId} refreshKey={adherenceTick} />
+              <AdherenceTrend traineeId={traineeId} refreshKey={adherenceTick} isMock={isMock} />
             </div>
           )}
 

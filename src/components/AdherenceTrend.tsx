@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import MaterialIcon from "@/components/MaterialIcon";
+import { fetchAdherenceHistory, fetchAverageAdherence } from "@/services/nutrition";
 import { getAdherenceHistory, averageAdherence } from "@/services/nutritionLocal";
 
 interface Props {
@@ -8,24 +9,44 @@ interface Props {
   days?: number;
   // Bump to force a re-read after adherence is recorded (e.g. after toggling eaten).
   refreshKey?: number;
+  // The dev-only local mock trainee has no real Supabase row, so its history
+  // lives in localStorage instead (see services/nutritionLocal.ts).
+  isMock?: boolean;
 }
 
 // Weekly nutrition-adherence trend (spec §3: "גרף מגמה שבועי לעמידה ביעדי תזונה").
-// Reads the locally-recorded daily adherence snapshots for a trainee.
-const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0 }: Props) => {
-  const { data, avg, hasData } = useMemo(() => {
-    const history = getAdherenceHistory(traineeId, days);
-    const chart = history.map((p) => ({
-      label: new Date(p.date).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-      value: p.adherence === null ? null : Math.round(p.adherence),
-    }));
-    return {
-      data: chart,
-      avg: averageAdherence(traineeId, days),
-      hasData: history.some((p) => p.adherence !== null),
+const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0, isMock = false }: Props) => {
+  const [data, setData] = useState<{ label: string; value: number | null }[]>([]);
+  const [avg, setAvg] = useState<number | null>(null);
+  const [hasData, setHasData] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const apply = (history: { date: string; adherence: number | null }[], average: number | null) => {
+      if (cancelled) return;
+      setData(
+        history.map((p) => ({
+          label: new Date(p.date).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
+          value: p.adherence === null ? null : Math.round(p.adherence),
+        }))
+      );
+      setAvg(average);
+      setHasData(history.some((p) => p.adherence !== null));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [traineeId, days, refreshKey]);
+
+    if (isMock) {
+      apply(getAdherenceHistory(traineeId, days), averageAdherence(traineeId, days));
+    } else {
+      Promise.all([fetchAdherenceHistory(traineeId, days), fetchAverageAdherence(traineeId, days)])
+        .then(([history, average]) => apply(history, average))
+        .catch((err) => console.error(err));
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [traineeId, days, refreshKey, isMock]);
 
   return (
     <div className="glass-card p-4">

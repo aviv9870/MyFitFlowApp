@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { FOODS_SEED } from "@/data/foodsSeed";
 import { mealActualMacros, mealTargetMacros, dayTargetMacros, planActualMacros, type PlanMeal, type MacroTotals } from "@/domain/nutrition-calculations";
-import { getBasePlan, saveBasePlan } from "@/services/nutritionLocal";
+import { fetchBasePlan, saveBasePlan } from "@/services/nutrition";
+import { getBasePlan as getBasePlanLocal, saveBasePlan as saveBasePlanLocal } from "@/services/nutritionLocal";
 import { getMockSessions, getMockSetLogs, getMockWeightLogs, generateMockTraineeData, clearMockTraineeData, MOCK_TRAINEE_ID } from "@/services/mockTraineeData";
 
 interface Trainee {
@@ -110,13 +111,16 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [report, setReport] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
-  // Nutrition (local-only base plan builder)
+  // Nutrition base plan builder
   const [nutritionMeals, setNutritionMeals] = useState<PlanMeal[]>([]);
+  const [loadingNutrition, setLoadingNutrition] = useState(false);
+  const [savingNutrition, setSavingNutrition] = useState(false);
   const [foodPickerMealId, setFoodPickerMealId] = useState<string | null>(null);
   const [foodPickerSearch, setFoodPickerSearch] = useState("");
   const [foodPickerMode, setFoodPickerMode] = useState<"search" | "custom">("search");
   const [customForm, setCustomForm] = useState({ name: "", calories: "", protein: "", carbs: "", fat: "" });
   const foodsById = useMemo(() => new Map(FOODS_SEED.map((f) => [f.id, f])), []);
+  const nutritionSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Local dev-only demo data controls (mock trainee only)
   const generateDemoData = (traineeId: string) => {
@@ -468,12 +472,42 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     if (tab === "weight" && weightData.length === 0) fetchWeight(tid);
     if (tab === "plans" && plans.length === 0) fetchPlans(tid);
     if (tab === "exercises") fetchPendingExercises(tid);
-    if (tab === "nutrition") setNutritionMeals(getBasePlan(tid));
+    if (tab === "nutrition") loadNutrition(tid);
   };
 
+  const loadNutrition = async (traineeId: string) => {
+    setLoadingNutrition(true);
+    try {
+      const meals = traineeId === MOCK_TRAINEE_ID ? getBasePlanLocal(traineeId) : await fetchBasePlan(traineeId);
+      setNutritionMeals(meals);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת התפריט");
+    } finally {
+      setLoadingNutrition(false);
+    }
+  };
+
+  // Local edits apply to state instantly; the DB write is debounced so fast,
+  // repeated keystrokes (typing a target number, adjusting grams) don't each
+  // trigger their own full delete+reinsert round trip.
   const persistNutrition = (next: PlanMeal[]) => {
     setNutritionMeals(next);
-    if (selectedTrainee) saveBasePlan(selectedTrainee.trainee_id, next);
+    if (!selectedTrainee) return;
+    const traineeId = selectedTrainee.trainee_id;
+
+    if (traineeId === MOCK_TRAINEE_ID) {
+      saveBasePlanLocal(traineeId, next);
+      return;
+    }
+
+    if (nutritionSaveTimeout.current) clearTimeout(nutritionSaveTimeout.current);
+    nutritionSaveTimeout.current = setTimeout(() => {
+      saveBasePlan(traineeId, next).catch((err) => {
+        console.error(err);
+        toast.error("שגיאה בשמירת התפריט");
+      });
+    }, 800);
   };
 
   const addMeal = () => {
@@ -564,11 +598,22 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     );
   };
 
-  // Every edit above already autosaves — this exists so the coach gets an
-  // explicit, unambiguous "this is now live for the trainee" confirmation.
-  const saveNutritionForTrainee = (traineeId: string) => {
-    saveBasePlan(traineeId, nutritionMeals);
-    toast.success("התפריט נשמר ויופיע אצל המתאמן");
+  // Every edit above already autosaves (debounced) — this exists so the coach
+  // gets an explicit, unambiguous "this is now live for the trainee" confirmation,
+  // and flushes immediately rather than waiting on the debounce.
+  const saveNutritionForTrainee = async (traineeId: string) => {
+    if (nutritionSaveTimeout.current) clearTimeout(nutritionSaveTimeout.current);
+    setSavingNutrition(true);
+    try {
+      if (traineeId === MOCK_TRAINEE_ID) saveBasePlanLocal(traineeId, nutritionMeals);
+      else await saveBasePlan(traineeId, nutritionMeals);
+      toast.success("התפריט נשמר ויופיע אצל המתאמן");
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בשמירת התפריט");
+    } finally {
+      setSavingNutrition(false);
+    }
   };
 
   const barData = useMemo(() => {
@@ -1076,9 +1121,15 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
             </div>
           )}
 
-          {/* Nutrition tab — local-only base menu builder */}
+          {/* Nutrition tab — base menu builder, backed by Supabase */}
           {activeTab === "nutrition" && (
             <div>
+              {loadingNutrition && (
+                <div className="text-center mb-3">
+                  <MaterialIcon icon="hourglass_top" className="text-primary text-[20px] animate-spin" />
+                </div>
+              )}
+
               {nutritionMeals.length > 0 && (
                 <div className="glass-card p-4 mb-3">
                   <h3 className="text-sm font-bold text-foreground mb-3">סך יומי — הוזן מול יעד</h3>
@@ -1317,9 +1368,10 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
               {nutritionMeals.length > 0 && (
                 <button
                   onClick={() => saveNutritionForTrainee(selectedTrainee.trainee_id)}
-                  className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm mt-3"
+                  disabled={savingNutrition}
+                  className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm mt-3 disabled:opacity-50"
                 >
-                  שמור תפריט למתאמן
+                  {savingNutrition ? "שומר..." : "שמור תפריט למתאמן"}
                 </button>
               )}
             </div>
