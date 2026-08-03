@@ -24,16 +24,16 @@ const AppSidebar = ({ open, onClose, onNavigate }: Props) => {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {/* Coach Dashboard - only for specific coach email */}
-          {user?.email?.toLowerCase() === "shirayadid806@gmail.com" && (
+          {/* Admin: manage trainees — only for the system admin account */}
+          {user?.email?.toLowerCase() === "aviv9870@gmail.com" && (
             <button
               onClick={() => { onNavigate("coach"); onClose(); }}
               className="w-full glass-card p-3 flex items-center gap-3 hover:bg-card/70 transition-all"
             >
               <MaterialIcon icon="groups" className="text-primary text-[22px]" />
               <div className="text-right">
-                <span className="text-sm font-bold text-foreground block">דשבורד מאמן</span>
-                <span className="text-[10px] text-muted-foreground">צפה במתאמנים שלך</span>
+                <span className="text-sm font-bold text-foreground block">ניהול מתאמנים</span>
+                <span className="text-[10px] text-muted-foreground">צור חשבונות, תוכניות וצפה בהתקדמות</span>
               </div>
             </button>
           )}

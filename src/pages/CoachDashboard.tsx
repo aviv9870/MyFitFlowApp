@@ -74,6 +74,12 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [pendingExercises, setPendingExercises] = useState<PendingExercise[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(false);
 
+  // New client creation
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [newClientEmail, setNewClientEmail] = useState("");
+  const [newClientName, setNewClientName] = useState("");
+  const [creatingClient, setCreatingClient] = useState(false);
+
   // AI
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiMessages, setAiMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
@@ -149,6 +155,35 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
       }))
     );
     setLoading(false);
+  };
+
+  const createClient = async () => {
+    if (!newClientEmail.trim() || creatingClient) return;
+    setCreatingClient(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke("admin-create-trainee", {
+        body: {
+          email: newClientEmail.trim(),
+          fullName: newClientName.trim() || undefined,
+          redirectTo: window.location.origin,
+        },
+        headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success("נשלחה הזמנה במייל ללקוח החדש");
+      setNewClientEmail("");
+      setNewClientName("");
+      setShowNewClient(false);
+      fetchTrainees();
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "שגיאה ביצירת חשבון");
+    } finally {
+      setCreatingClient(false);
+    }
   };
 
   const selectTrainee = async (trainee: Trainee) => {
@@ -509,19 +544,69 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
           <MaterialIcon icon="arrow_forward" className="text-foreground text-[24px]" />
         </button>
         <h1 className="text-xl font-bold neon-text">
-          {selectedTrainee ? selectedTrainee.display_name : "דשבורד מאמן"}
+          {selectedTrainee ? selectedTrainee.display_name : "ניהול מתאמנים"}
         </h1>
       </div>
 
       {!selectedTrainee ? (
         <>
+          <div className="glass-card p-3 mb-4">
+            {showNewClient ? (
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <MaterialIcon icon="person_add" className="text-primary text-[18px]" />
+                  לקוח חדש
+                </h3>
+                <input
+                  type="text"
+                  placeholder="שם מלא (אופציונלי)"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <input
+                  type="email"
+                  placeholder="coach@email.com"
+                  value={newClientEmail}
+                  onChange={(e) => setNewClientEmail(e.target.value)}
+                  className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-muted-foreground">הלקוח יקבל מייל הזמנה לקביעת סיסמה ויתווסף אוטומטית לרשימת המתאמנים שלך</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={createClient}
+                    disabled={creatingClient || !newClientEmail.trim()}
+                    className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                  >
+                    {creatingClient ? "שולח הזמנה..." : "שלח הזמנה"}
+                  </button>
+                  <button
+                    onClick={() => setShowNewClient(false)}
+                    className="px-3 bg-secondary/50 text-muted-foreground rounded-lg text-xs font-bold"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNewClient(true)}
+                className="w-full flex items-center justify-center gap-2 text-primary py-1"
+              >
+                <MaterialIcon icon="person_add" className="text-[18px]" />
+                <span className="text-sm font-bold">צור חשבון ללקוח חדש</span>
+              </button>
+            )}
+          </div>
+
           {loading ? (
             <p className="text-center text-muted-foreground text-sm mt-10">טוען...</p>
           ) : trainees.length === 0 ? (
             <div className="text-center mt-16">
               <MaterialIcon icon="group_off" className="text-muted-foreground text-[48px] mb-3" />
-              <p className="text-muted-foreground text-sm">אין מתאמנים מקושרים</p>
-              <p className="text-muted-foreground text-[10px] mt-1">מתאמנים צריכים להוסיף את המייל שלך בהגדרות</p>
+              <p className="text-muted-foreground text-sm">אין עדיין מתאמנים</p>
+              <p className="text-muted-foreground text-[10px] mt-1">צור חשבון ללקוח חדש למעלה כדי להתחיל</p>
             </div>
           ) : (
             <div className="space-y-2">
