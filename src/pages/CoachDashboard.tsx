@@ -13,7 +13,9 @@ import { getMockSessions, getMockSetLogs, getMockWeightLogs, generateMockTrainee
 
 interface Trainee {
   trainee_id: string;
+  permission_id: string;
   display_name: string | null;
+  last_active: string | null;
 }
 
 interface SessionRow {
@@ -79,6 +81,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientName, setNewClientName] = useState("");
   const [creatingClient, setCreatingClient] = useState(false);
+  const [traineeSearch, setTraineeSearch] = useState("");
 
   // AI
   const [aiQuestion, setAiQuestion] = useState("");
@@ -126,14 +129,14 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     // Local dev-only stand-in: the DEV_MODE mock user has no real Supabase
     // data, so give it a local mock trainee to test the coach screens against.
     if (user.id === "dev-user") {
-      setTrainees([{ trainee_id: MOCK_TRAINEE_ID, display_name: "מתאמן לדוגמה (מקומי)" }]);
+      setTrainees([{ trainee_id: MOCK_TRAINEE_ID, permission_id: MOCK_TRAINEE_ID, display_name: "מתאמן לדוגמה (מקומי)", last_active: null }]);
       setLoading(false);
       return;
     }
 
     const { data: perms } = await supabase
       .from("coach_permissions")
-      .select("trainee_id")
+      .select("id, trainee_id")
       .eq("coach_email", user.email.toLowerCase());
 
     if (!perms || perms.length === 0) {
@@ -148,14 +151,42 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
       .select("user_id, display_name")
       .in("user_id", traineeIds);
 
+    const { data: recentSessions } = await supabase
+      .from("workout_sessions")
+      .select("user_id, completed_at")
+      .in("user_id", traineeIds)
+      .order("completed_at", { ascending: false });
+
+    const lastActiveByUser: Record<string, string> = {};
+    (recentSessions ?? []).forEach((s) => {
+      if (!lastActiveByUser[s.user_id]) lastActiveByUser[s.user_id] = s.completed_at;
+    });
+
     setTrainees(
-      traineeIds.map((id) => ({
-        trainee_id: id,
-        display_name: profiles?.find((p) => p.user_id === id)?.display_name || "מתאמן",
+      perms.map((p) => ({
+        trainee_id: p.trainee_id,
+        permission_id: p.id,
+        display_name: profiles?.find((pr) => pr.user_id === p.trainee_id)?.display_name || "מתאמן",
+        last_active: lastActiveByUser[p.trainee_id] ?? null,
       }))
     );
     setLoading(false);
   };
+
+  const removeTrainee = async (permissionId: string) => {
+    const { error } = await supabase.from("coach_permissions").delete().eq("id", permissionId);
+    if (error) {
+      toast.error("שגיאה בהסרת המתאמן");
+      return;
+    }
+    setTrainees((prev) => prev.filter((t) => t.permission_id !== permissionId));
+    toast.success("המתאמן הוסר");
+  };
+
+  const filteredTrainees = useMemo(
+    () => trainees.filter((t) => (t.display_name ?? "").includes(traineeSearch.trim())),
+    [trainees, traineeSearch]
+  );
 
   const createClient = async () => {
     if (!newClientEmail.trim() || creatingClient) return;
@@ -609,24 +640,52 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
               <p className="text-muted-foreground text-[10px] mt-1">צור חשבון ללקוח חדש למעלה כדי להתחיל</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {trainees.map((t) => (
-                <button
-                  key={t.trainee_id}
-                  onClick={() => selectTrainee(t)}
-                  className="w-full glass-card p-4 flex items-center gap-3 hover:scale-[1.01] transition-transform"
-                >
-                  <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
-                    <MaterialIcon icon="person" className="text-primary text-[22px]" />
+            <>
+              {trainees.length > 3 && (
+                <div className="relative mb-3">
+                  <MaterialIcon icon="search" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-[18px]" />
+                  <input
+                    type="text"
+                    placeholder="חיפוש מתאמן..."
+                    value={traineeSearch}
+                    onChange={(e) => setTraineeSearch(e.target.value)}
+                    className="w-full bg-secondary/50 border border-border rounded-xl py-2 pr-10 pl-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                {filteredTrainees.map((t) => (
+                  <div
+                    key={t.trainee_id}
+                    onClick={() => selectTrainee(t)}
+                    className="w-full glass-card p-4 flex items-center gap-3 hover:scale-[1.01] transition-transform cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                      <MaterialIcon icon="person" className="text-primary text-[22px]" />
+                    </div>
+                    <div className="text-right flex-1">
+                      <p className="text-sm font-bold text-foreground">{t.display_name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {t.last_active
+                          ? `אימון אחרון: ${new Date(t.last_active).toLocaleDateString("he-IL")}`
+                          : "עדיין לא התאמן"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeTrainee(t.permission_id); }}
+                      className="p-1.5 rounded-lg hover:bg-destructive/15 text-muted-foreground hover:text-destructive"
+                      title="הסר מתאמן"
+                    >
+                      <MaterialIcon icon="person_remove" className="text-[18px]" />
+                    </button>
+                    <MaterialIcon icon="chevron_left" className="text-muted-foreground text-[20px]" />
                   </div>
-                  <div className="text-right flex-1">
-                    <p className="text-sm font-bold text-foreground">{t.display_name}</p>
-                    <p className="text-[10px] text-muted-foreground">לחץ לצפייה בנתונים</p>
-                  </div>
-                  <MaterialIcon icon="chevron_left" className="text-muted-foreground text-[20px]" />
-                </button>
-              ))}
-            </div>
+                ))}
+                {filteredTrainees.length === 0 && (
+                  <p className="text-center text-muted-foreground text-sm mt-6">לא נמצאו מתאמנים תואמים</p>
+                )}
+              </div>
+            </>
           )}
         </>
       ) : (
