@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
+import { applyTheme, applyMode, getStoredMode, type ThemeMode } from "@/lib/theme";
 
 const themeColors = [
   { id: "green", label: "ירוק", hue: "145", preview: "hsl(145, 100%, 50%)" },
@@ -24,6 +25,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
   const [birthYear, setBirthYear] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [themeColor, setThemeColor] = useState("green");
+  const [mode, setMode] = useState<ThemeMode>(() => getStoredMode());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -43,27 +45,14 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
     fetchSettings();
   }, [user]);
 
-  const applyTheme = (colorId: string) => {
-    const root = document.documentElement;
-    const colorMap: Record<string, { primary: string; accent: string; ring: string; neon: string }> = {
-      green: { primary: "145 100% 50%", accent: "145 80% 42%", ring: "145 100% 50%", neon: "145 100% 50%" },
-      cyan: { primary: "180 100% 50%", accent: "180 80% 42%", ring: "180 100% 50%", neon: "180 100% 50%" },
-      purple: { primary: "270 100% 65%", accent: "270 80% 55%", ring: "270 100% 65%", neon: "270 100% 65%" },
-      orange: { primary: "25 100% 55%", accent: "25 80% 48%", ring: "25 100% 55%", neon: "25 100% 55%" },
-      pink: { primary: "330 100% 60%", accent: "330 80% 52%", ring: "330 100% 60%", neon: "330 100% 60%" },
-    };
-    const c = colorMap[colorId] ?? colorMap.green;
-    root.style.setProperty("--primary", c.primary);
-    root.style.setProperty("--accent", c.accent);
-    root.style.setProperty("--ring", c.ring);
-    root.style.setProperty("--neon-glow", c.neon);
-    root.style.setProperty("--sidebar-primary", c.primary);
-    root.style.setProperty("--sidebar-ring", c.ring);
-  };
-
   const selectTheme = (colorId: string) => {
     setThemeColor(colorId);
     applyTheme(colorId);
+  };
+
+  const selectMode = (next: ThemeMode) => {
+    setMode(next);
+    applyMode(next);
   };
 
   const save = async () => {
@@ -171,6 +160,38 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
               className="w-full bg-secondary/50 border border-border rounded-xl py-2.5 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Display Mode */}
+      <div className="glass-card p-4 mb-4">
+        <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
+          <MaterialIcon icon="contrast" className="text-primary text-[18px]" />
+          מצב תצוגה
+        </h3>
+        <div className="flex gap-2">
+          <button
+            onClick={() => selectMode("dark")}
+            className={`flex-1 p-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all ${
+              mode === "dark"
+                ? "bg-primary/20 neon-border text-primary"
+                : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <MaterialIcon icon="dark_mode" className="text-[18px]" />
+            כהה
+          </button>
+          <button
+            onClick={() => selectMode("light")}
+            className={`flex-1 p-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all ${
+              mode === "light"
+                ? "bg-primary/20 neon-border text-primary"
+                : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <MaterialIcon icon="light_mode" className="text-[18px]" />
+            בהיר
+          </button>
         </div>
       </div>
 

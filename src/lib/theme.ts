@@ -18,3 +18,19 @@ export const applyTheme = (colorId: string) => {
   root.style.setProperty("--sidebar-primary", c.primary);
   root.style.setProperty("--sidebar-ring", c.ring);
 };
+
+export type ThemeMode = "dark" | "light";
+const MODE_STORAGE_KEY = "myfitflow-theme-mode";
+
+export const getStoredMode = (): ThemeMode =>
+  (localStorage.getItem(MODE_STORAGE_KEY) as ThemeMode | null) ?? "dark";
+
+export const applyMode = (mode: ThemeMode) => {
+  const root = document.documentElement;
+  if (mode === "light") root.setAttribute("data-theme", "light");
+  else root.removeAttribute("data-theme");
+  localStorage.setItem(MODE_STORAGE_KEY, mode);
+};
+
+// Call once, before first paint, to avoid a flash of the wrong mode.
+export const initMode = () => applyMode(getStoredMode());
