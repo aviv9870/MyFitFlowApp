@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
@@ -30,28 +30,52 @@ interface Props {
 
 const calc1RM = (w: number, r: number) => r === 1 ? w : w / (1.0278 - 0.0278 * r);
 
-const fireConfetti = () => {
-  const duration = 2500;
-  const end = Date.now() + duration;
-  const colors = ["#FFD700", "#FF6B6B", "#4ECDC4", "#a78bfa"];
-  (function frame() {
-    confetti({ particleCount: 4, angle: 60, spread: 70, origin: { x: 0, y: 0.7 }, colors });
-    confetti({ particleCount: 4, angle: 120, spread: 70, origin: { x: 1, y: 0.7 }, colors });
-    if (Date.now() < end) requestAnimationFrame(frame);
-  })();
-};
+// The celebration modal + confetti should only ever fire once per session —
+// this component is reused to browse already-completed sessions from
+// History/Dashboard/CoachDashboard, which would otherwise retrigger it
+// every time the same session's records are reopened.
+const celebratedKey = (sessionId: string) => `myfitflow:workout:celebrated:${sessionId}`;
 
 const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => {
   const [records, setRecords] = useState<Record[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const inlineCardRef = useRef<HTMLDivElement>(null);
+  const modalCardRef = useRef<HTMLDivElement>(null);
+  const confettiTimeoutRef = useRef<number | null>(null);
+  const confettiActiveRef = useRef(false);
+
+  const stopConfetti = () => {
+    confettiActiveRef.current = false;
+    if (confettiTimeoutRef.current !== null) {
+      window.clearTimeout(confettiTimeoutRef.current);
+      confettiTimeoutRef.current = null;
+    }
+  };
+
+  const fireConfetti = () => {
+    confettiActiveRef.current = true;
+    const duration = 2500;
+    const end = Date.now() + duration;
+    const colors = ["#FFD700", "#FF6B6B", "#4ECDC4", "#a78bfa"];
+    const frame = () => {
+      if (!confettiActiveRef.current) return;
+      confetti({ particleCount: 4, angle: 60, spread: 70, origin: { x: 0, y: 0.7 }, colors });
+      confetti({ particleCount: 4, angle: 120, spread: 70, origin: { x: 1, y: 0.7 }, colors });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    };
+    frame();
+  };
 
   useEffect(() => {
     if (!sets.length) { setLoading(false); return; }
     findRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sets, userId, sessionId]);
+
+  // Stop any in-flight confetti loop on unmount so it doesn't keep firing
+  // after the user closes the modal or navigates away.
+  useEffect(() => stopConfetti, []);
 
   const findRecords = async () => {
     const { data: allLogs } = await supabase
@@ -91,40 +115,67 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
 
     setRecords(found);
     setLoading(false);
-    if (found.length > 0) {
+    if (found.length > 0 && !localStorage.getItem(celebratedKey(sessionId))) {
+      localStorage.setItem(celebratedKey(sessionId), "1");
       setShowModal(true);
-      setTimeout(() => fireConfetti(), 200);
+      confettiTimeoutRef.current = window.setTimeout(() => fireConfetti(), 200);
     }
   };
 
-  const takeScreenshot = async () => {
-    if (!cardRef.current) return;
+  const closeModal = () => {
+    setShowModal(false);
+    stopConfetti();
+  };
+
+  const takeScreenshot = async (ref: RefObject<HTMLDivElement>) => {
+    if (!ref.current) return;
     try {
-      const canvas = await html2canvas(cardRef.current, {
+      const canvas = await html2canvas(ref.current, {
         backgroundColor: "#0a0a0a",
         scale: 2,
       });
-      const link = document.createElement("a");
-      link.download = `records_${planName}_${new Date().toISOString().slice(0, 10)}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      toast.success("צילום מסך נשמר!");
-    } catch {
+
+      const filename = `records_${planName}_${new Date().toISOString().slice(0, 10)}.png`;
+
+      const shareViaNative = async () => {
+        const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) return false;
+        const file = new File([blob], filename, { type: "image/png" });
+        const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean; share?: (data: { files: File[]; title?: string; text?: string }) => Promise<void> };
+        if (nav.canShare && nav.share && nav.canShare({ files: [file] })) {
+          await nav.share({ files: [file], title: "שיאים אישיים", text: `${planName} • ${date}` });
+          return true;
+        }
+        return false;
+      };
+
+      const shared = await shareViaNative();
+      if (!shared) {
+        const link = document.createElement("a");
+        link.download = filename;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        toast.success("צילום מסך נשמר!");
+      }
+    } catch (err) {
+      // AbortError fires when the user cancels the native share sheet — not a real error
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      console.error(err);
       toast.error("שגיאה בצילום מסך");
     }
   };
 
   if (loading || records.length === 0) return null;
 
-  const Card = (
-    <div ref={cardRef} className="glass-card p-5 w-full" style={{ direction: "rtl" }}>
+  const renderCard = (ref: RefObject<HTMLDivElement>) => (
+    <div ref={ref} className="glass-card p-5 w-full" style={{ direction: "rtl" }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <MaterialIcon icon="emoji_events" className="text-yellow-400 text-[24px]" />
           <h4 className="text-base font-bold text-foreground">שיאים אישיים חדשים! 🔥</h4>
         </div>
         <button
-          onClick={takeScreenshot}
+          onClick={() => takeScreenshot(ref)}
           className="flex items-center gap-1 bg-secondary/50 border border-border rounded-xl px-2.5 py-1.5 hover:bg-secondary/70 transition-all"
         >
           <MaterialIcon icon="photo_camera" className="text-foreground text-[14px]" />
@@ -164,15 +215,15 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
   return (
     <>
       {/* Inline display */}
-      <div className="px-4 mb-4">{Card}</div>
+      <div className="px-4 mb-4">{renderCard(inlineCardRef)}</div>
 
       {/* Centered celebration modal */}
       {showModal && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-sm animate-in zoom-in-95 duration-300">
-            {Card}
+            {renderCard(modalCardRef)}
             <button
-              onClick={() => setShowModal(false)}
+              onClick={closeModal}
               className="w-full mt-3 bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm"
             >
               מגניב! 🎉

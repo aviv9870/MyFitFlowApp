@@ -3,26 +3,27 @@ import MaterialIcon from "@/components/MaterialIcon";
 
 interface Props {
   seconds: number;
+  endAt: number;
   onDone: () => void;
   progressMessage?: string | null;
 }
 
-const RestTimer = ({ seconds, onDone, progressMessage }: Props) => {
-  const endTimeRef = useRef(Date.now() + seconds * 1000);
-  const [remaining, setRemaining] = useState(seconds);
+const RestTimer = ({ seconds, endAt, onDone, progressMessage }: Props) => {
+  const [remaining, setRemaining] = useState(() => Math.max(0, Math.ceil((endAt - Date.now()) / 1000)));
 
   useEffect(() => {
     const tick = () => {
-      const left = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
+      const left = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       setRemaining(left);
       if (left <= 0) {
         onDone();
       }
     };
 
+    tick();
     const interval = setInterval(tick, 250);
     return () => clearInterval(interval);
-  }, [onDone]);
+  }, [endAt, onDone]);
 
   const pct = ((seconds - remaining) / seconds) * 100;
   const m = Math.floor(remaining / 60).toString().padStart(2, "0");

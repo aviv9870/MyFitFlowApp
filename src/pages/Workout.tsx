@@ -9,7 +9,7 @@ import SwapExerciseModal from "@/components/SwapExerciseModal";
 import ExerciseHistory from "@/components/ExerciseHistory";
 import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
-import { getPlanExerciseExtras, saveSetExtras, setExtrasEntryKey, type SetExtras } from "@/services/workoutExtrasLocal";
+import { getPlanExerciseExtras } from "@/services/workoutExtrasLocal";
 
 interface WorkoutSet {
   weight: number;
@@ -17,8 +17,6 @@ interface WorkoutSet {
   prevWeight: number | null;
   prevReps: number | null;
   locked: boolean;
-  rpe: number | null;
-  rir: number | null;
 }
 
 interface WorkoutExercise {
@@ -27,9 +25,10 @@ interface WorkoutExercise {
   targetSets: number;
   restSeconds: number;
   repRange: string;
-  targetRpe: number | null;
-  targetRir: number | null;
   tempo: string;
+  notes: string;
+  groupId: string | null;
+  groupType: "superset" | "triset" | null;
   sets: WorkoutSet[];
 }
 
@@ -43,6 +42,9 @@ interface PlanData {
     target_sets: number;
     rest_seconds: number;
     order_index: number;
+    group_id: string | null;
+    group_type: "superset" | "triset" | null;
+    notes: string;
   }[];
 }
 
@@ -85,6 +87,7 @@ const Workout = () => {
   const [startTimestamp, setStartTimestamp] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [restTimer, setRestTimer] = useState<number | null>(null);
+  const [restEndAt, setRestEndAt] = useState<number | null>(null);
   const [restProgressMsg, setRestProgressMsg] = useState<string | null>(null);
   const [doneSessionId, setDoneSessionId] = useState<string | null>(null);
   const [editingDone, setEditingDone] = useState(false);
@@ -141,7 +144,7 @@ const Workout = () => {
     for (const p of plansData) {
       const { data: exData } = await supabase
         .from("workout_plan_exercises")
-        .select("exercise_id, target_sets, rest_seconds, order_index")
+        .select("exercise_id, target_sets, rest_seconds, order_index, group_id, group_type, notes")
         .eq("plan_id", p.id)
         .order("order_index");
 
@@ -158,6 +161,8 @@ const Workout = () => {
         description: p.description,
         exercises: (exData ?? []).map((e) => ({
           ...e,
+          group_type: e.group_type as "superset" | "triset" | null,
+          notes: e.notes ?? "",
           exercise_name: exerciseNames[e.exercise_id] ?? "תרגיל",
         })),
       });
@@ -222,9 +227,10 @@ const Workout = () => {
         targetSets: pe.target_sets,
         restSeconds: pe.rest_seconds,
         repRange: getRepRange(pe.exercise_name),
-        targetRpe: planExtras[pe.exercise_id]?.targetRpe ?? null,
-        targetRir: planExtras[pe.exercise_id]?.targetRir ?? null,
         tempo: planExtras[pe.exercise_id]?.tempo ?? "",
+        notes: pe.notes,
+        groupId: pe.group_id,
+        groupType: pe.group_type,
         sets: Array.from({ length: pe.target_sets }, (_, setIdx) => {
           const prev = prevDataPerSet[pe.exercise_name]?.[setIdx];
           return {
@@ -233,8 +239,6 @@ const Workout = () => {
             prevWeight: prev?.weight ?? null,
             prevReps: prev?.reps ?? null,
             locked: false,
-            rpe: null,
-            rir: null,
           };
         }),
       }))
@@ -246,13 +250,13 @@ const Workout = () => {
     setExercises((prev) =>
       prev.map((ex, i) =>
         i === exIdx
-          ? { ...ex, sets: [...ex.sets, { weight: 0, reps: 0, prevWeight: null, prevReps: null, locked: false, rpe: null, rir: null }] }
+          ? { ...ex, sets: [...ex.sets, { weight: 0, reps: 0, prevWeight: null, prevReps: null, locked: false }] }
           : ex
       )
     );
   };
 
-  const updateSet = (exIdx: number, setIdx: number, field: "weight" | "reps" | "rpe" | "rir", value: number | null) => {
+  const updateSet = (exIdx: number, setIdx: number, field: "weight" | "reps", value: number | null) => {
     setExercises((prev) =>
       prev.map((ex, i) =>
         i === exIdx
@@ -299,8 +303,20 @@ const Workout = () => {
             .replace("${currReps}", String(set.reps));
         }
       }
-      setRestProgressMsg(progressMsg);
-      setRestTimer(exercises[exIdx].restSeconds);
+      // In a superset/triset, rest only after the last exercise in the
+      // group's round — not between the group's own exercises.
+      const groupId = exercises[exIdx].groupId;
+      const isLastInGroup = !groupId || (() => {
+        const groupIdxs = exercises.reduce<number[]>((acc, ex, i) => (ex.groupId === groupId ? [...acc, i] : acc), []);
+        return exIdx === groupIdxs[groupIdxs.length - 1];
+      })();
+
+      if (isLastInGroup) {
+        setRestProgressMsg(progressMsg);
+        const seconds = exercises[exIdx].restSeconds;
+        setRestTimer(seconds);
+        setRestEndAt(Date.now() + seconds * 1000);
+      }
     } else {
       // Unlock for editing
       setExercises((prev) =>
@@ -312,6 +328,12 @@ const Workout = () => {
       );
     }
   };
+
+  const handleRestDone = useCallback(() => {
+    setRestTimer(null);
+    setRestEndAt(null);
+    setRestProgressMsg(null);
+  }, []);
 
   const handleSwap = (exIdx: number, newExercise: { id: string; name: string; muscle_group: string }) => {
     setExercises((prev) =>
@@ -364,18 +386,6 @@ const Workout = () => {
         if (logsError) throw logsError;
       }
 
-      const setExtras: Record<string, SetExtras> = {};
-      exercises.forEach((ex) => {
-        ex.sets
-          .filter((s) => s.reps > 0)
-          .forEach((s, idx) => {
-            if (s.rpe != null || s.rir != null) {
-              setExtras[setExtrasEntryKey(ex.name, idx + 1)] = { rpe: s.rpe, rir: s.rir };
-            }
-          });
-      });
-      if (Object.keys(setExtras).length > 0) saveSetExtras(session.id, setExtras);
-
       localStorage.removeItem(WORKOUT_STORAGE_KEY);
       toast.success("האימון נשמר בהצלחה!");
       setDoneSessionId(session.id);
@@ -404,18 +414,8 @@ const Workout = () => {
     }
   };
 
-  // Rest timer rendered inline in the active phase, not as a separate screen
-
-  // Swap exercise modal
-  if (swapIdx !== null) {
-    return (
-      <SwapExerciseModal
-        currentExerciseName={exercises[swapIdx]?.name ?? ""}
-        onSwap={(ex) => handleSwap(swapIdx, ex)}
-        onClose={() => setSwapIdx(null)}
-      />
-    );
-  }
+  // Rest timer and swap-exercise modal are both rendered inline as overlays
+  // in the active phase (below), so opening them doesn't unmount the timer.
 
   const saveEditedWorkout = async () => {
     if (!user || !doneSessionId) return;
@@ -454,13 +454,13 @@ const Workout = () => {
       ex.sets.filter((s) => s.reps > 0).map((s) => ({ name: ex.name, weight: s.weight, reps: s.reps }))
     );
     const totalVol = completedSets.reduce((a, s) => a + s.weight * s.reps, 0);
-    const grouped: Record<string, { weight: number; reps: number; rpe: number | null; rir: number | null; setIdx: number; exIdx: number }[]> = {};
+    const grouped: Record<string, { weight: number; reps: number; setIdx: number; exIdx: number }[]> = {};
     exercises.forEach((ex, exIdx) => {
       const validSets = ex.sets
         .map((s, setIdx) => ({ ...s, setIdx, exIdx }))
         .filter((s) => s.reps > 0 || editingDone);
       if (validSets.length > 0) {
-        grouped[ex.name] = validSets.map((s) => ({ weight: s.weight, reps: s.reps, rpe: s.rpe, rir: s.rir, setIdx: s.setIdx, exIdx: s.exIdx }));
+        grouped[ex.name] = validSets.map((s) => ({ weight: s.weight, reps: s.reps, setIdx: s.setIdx, exIdx: s.exIdx }));
       }
     });
 
@@ -522,11 +522,6 @@ const Workout = () => {
                       </>
                     )}
                     <span className="flex-1 text-primary">{s.weight * s.reps}</span>
-                    {(s.rpe != null || s.rir != null) && (
-                      <span className="text-[9px] text-muted-foreground shrink-0">
-                        {s.rpe != null && `RPE ${s.rpe}`}{s.rpe != null && s.rir != null && " · "}{s.rir != null && `RIR ${s.rir}`}
-                      </span>
-                    )}
                   </div>
                 ))}
               </div>
@@ -583,8 +578,15 @@ const Workout = () => {
     return (
       <div className={`min-h-screen bg-background pb-24 px-4 max-w-lg mx-auto ${restTimer !== null ? "pt-24" : "pt-6"}`}>
         {/* Rest timer banner at top */}
-        {restTimer !== null && (
-          <RestTimer seconds={restTimer} onDone={() => { setRestTimer(null); setRestProgressMsg(null); }} progressMessage={restProgressMsg} />
+        {restTimer !== null && restEndAt !== null && (
+          <RestTimer seconds={restTimer} endAt={restEndAt} onDone={handleRestDone} progressMessage={restProgressMsg} />
+        )}
+        {swapIdx !== null && (
+          <SwapExerciseModal
+            currentExerciseName={exercises[swapIdx]?.name ?? ""}
+            onSwap={(ex) => handleSwap(swapIdx, ex)}
+            onClose={() => setSwapIdx(null)}
+          />
         )}
         {/* Header with timer */}
         <div className="flex items-center justify-between mb-6">
@@ -598,7 +600,8 @@ const Workout = () => {
         </div>
 
         <div className="space-y-4">
-          {exercises.map((exercise, exIdx) => (
+          {(() => {
+            const renderCard = (exercise: WorkoutExercise, exIdx: number) => (
             <div key={exIdx} className="glass-card p-4">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-sm font-bold text-foreground flex-1">{exercise.name}</h3>
@@ -623,12 +626,15 @@ const Workout = () => {
                 </div>
               </div>
               <p className="text-[10px] text-primary mb-1">טווח מומלץ: {exercise.repRange} חזרות</p>
-              {(exercise.targetRpe != null || exercise.targetRir != null || exercise.tempo) && (
-                <p className="text-[10px] text-muted-foreground mb-3">
-                  יעד המאמן:{" "}
-                  {exercise.targetRpe != null && <span>RPE {exercise.targetRpe} </span>}
-                  {exercise.targetRir != null && <span>RIR {exercise.targetRir} </span>}
-                  {exercise.tempo && <span>טמפו {exercise.tempo}</span>}
+              {exercise.tempo && (
+                <p className="text-[10px] text-muted-foreground mb-1">
+                  יעד המאמן: <span>טמפו {exercise.tempo}</span>
+                </p>
+              )}
+              {exercise.notes && (
+                <p className="text-[10px] text-muted-foreground bg-secondary/30 rounded-lg px-2 py-1 mb-3">
+                  <MaterialIcon icon="sticky_note_2" className="text-[12px] align-middle ml-1" />
+                  {exercise.notes}
                 </p>
               )}
 
@@ -651,7 +657,7 @@ const Workout = () => {
                           value={set.weight || ""}
                           onChange={(e) => updateSet(exIdx, setIdx, "weight", Number(e.target.value))}
                           disabled={set.locked}
-                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
+                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all scroll-mt-24 ${
                             set.locked
                               ? "bg-secondary/30 border-primary/30 text-primary"
                               : "bg-secondary/50 border-border"
@@ -671,7 +677,7 @@ const Workout = () => {
                           value={set.reps || ""}
                           onChange={(e) => updateSet(exIdx, setIdx, "reps", Number(e.target.value))}
                           disabled={set.locked}
-                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all ${
+                          className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all scroll-mt-24 ${
                             set.locked
                               ? "bg-secondary/30 border-primary/30 text-primary"
                               : "bg-secondary/50 border-border"
@@ -692,23 +698,6 @@ const Workout = () => {
                         />
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 pr-10">
-                      <input
-                        type="number"
-                        placeholder="RPE"
-                        value={set.rpe ?? ""}
-                        onChange={(e) => updateSet(exIdx, setIdx, "rpe", e.target.value === "" ? null : Number(e.target.value))}
-                        className="flex-1 bg-secondary/30 border border-border rounded-lg py-1 px-2 text-[11px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                      <input
-                        type="number"
-                        placeholder="RIR"
-                        value={set.rir ?? ""}
-                        onChange={(e) => updateSet(exIdx, setIdx, "rir", e.target.value === "" ? null : Number(e.target.value))}
-                        className="flex-1 bg-secondary/30 border border-border rounded-lg py-1 px-2 text-[11px] text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                      <span className="w-10" />
-                    </div>
                   </div>
                 ))}
               </div>
@@ -718,7 +707,37 @@ const Workout = () => {
                 הוסף סט
               </button>
             </div>
-          ))}
+            );
+
+            const rendered: JSX.Element[] = [];
+            let i = 0;
+            while (i < exercises.length) {
+              const ex = exercises[i];
+              if (ex.groupId) {
+                const groupId = ex.groupId;
+                const groupItems: { ex: WorkoutExercise; idx: number }[] = [];
+                let j = i;
+                while (j < exercises.length && exercises[j].groupId === groupId) {
+                  groupItems.push({ ex: exercises[j], idx: j });
+                  j++;
+                }
+                rendered.push(
+                  <div key={groupId} className="border-2 border-primary/40 rounded-2xl p-2 space-y-2 bg-primary/5">
+                    <span className="text-[11px] font-bold text-primary flex items-center gap-1 px-1">
+                      <MaterialIcon icon="link" className="text-[14px]" />
+                      {ex.groupType === "triset" ? "טריפל-סט" : "סופר-סט"}
+                    </span>
+                    {groupItems.map(({ ex: gex, idx: gidx }) => renderCard(gex, gidx))}
+                  </div>
+                );
+                i = j;
+              } else {
+                rendered.push(renderCard(ex, i));
+                i++;
+              }
+            }
+            return rendered;
+          })()}
         </div>
 
         <div className="flex gap-3 mt-6">

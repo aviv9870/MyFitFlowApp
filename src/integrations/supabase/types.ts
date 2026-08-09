@@ -360,7 +360,10 @@ export type Database = {
       workout_plan_exercises: {
         Row: {
           exercise_id: string
+          group_id: string | null
+          group_type: string | null
           id: string
+          notes: string | null
           order_index: number
           plan_id: string
           rest_seconds: number
@@ -368,7 +371,10 @@ export type Database = {
         }
         Insert: {
           exercise_id: string
+          group_id?: string | null
+          group_type?: string | null
           id?: string
+          notes?: string | null
           order_index?: number
           plan_id: string
           rest_seconds?: number
@@ -376,7 +382,10 @@ export type Database = {
         }
         Update: {
           exercise_id?: string
+          group_id?: string | null
+          group_type?: string | null
           id?: string
+          notes?: string | null
           order_index?: number
           plan_id?: string
           rest_seconds?: number
@@ -513,10 +522,7 @@ export type Database = {
         Args: { _submitted_by: string }
         Returns: boolean
       }
-      current_user_email: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      current_user_email: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never

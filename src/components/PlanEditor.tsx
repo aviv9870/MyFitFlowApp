@@ -17,15 +17,16 @@ interface PlanExercise {
   target_sets: number;
   rest_seconds: number;
   order_index: number;
+  group_id: string | null;
+  group_type: "superset" | "triset" | null;
+  notes: string;
   // Local-only until the schema migration lands (see workoutExtrasLocal.ts)
-  target_rpe: number | null;
-  target_rir: number | null;
   tempo: string;
 }
 
-// What callers pass in — target_rpe/target_rir/tempo are loaded internally
-// from the local overlay (keyed by plan id), not supplied by the caller.
-type IncomingPlanExercise = Omit<PlanExercise, "target_rpe" | "target_rir" | "tempo">;
+// What callers pass in — tempo is loaded internally from the local overlay
+// (keyed by plan id), not supplied by the caller.
+type IncomingPlanExercise = Omit<PlanExercise, "tempo">;
 
 interface WorkoutPlan {
   id?: string;
@@ -50,8 +51,6 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
     const extras = plan?.id ? getPlanExerciseExtras(plan.id) : {};
     return (plan?.exercises ?? []).map((pe) => ({
       ...pe,
-      target_rpe: extras[pe.exercise_id]?.targetRpe ?? null,
-      target_rir: extras[pe.exercise_id]?.targetRir ?? null,
       tempo: extras[pe.exercise_id]?.tempo ?? "",
     }));
   });
@@ -111,7 +110,7 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
     if (planExercises.find((pe) => pe.exercise_id === ex.id)) return;
     setPlanExercises((prev) => [
       ...prev,
-      { exercise_id: ex.id, exercise_name: ex.name, target_sets: 3, rest_seconds: 90, order_index: prev.length, target_rpe: null, target_rir: null, tempo: "" },
+      { exercise_id: ex.id, exercise_name: ex.name, target_sets: 3, rest_seconds: 90, order_index: prev.length, group_id: null, group_type: null, notes: "", tempo: "" },
     ]);
     setShowPicker(false);
     setSearchTerm("");
@@ -121,7 +120,7 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
     setPlanExercises((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const updateExercise = (idx: number, field: "target_sets" | "rest_seconds" | "target_rpe" | "target_rir", value: number | null) => {
+  const updateExercise = (idx: number, field: "target_sets" | "rest_seconds", value: number | null) => {
     setPlanExercises((prev) =>
       prev.map((pe, i) => (i === idx ? { ...pe, [field]: value } : pe))
     );
@@ -131,12 +130,52 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
     setPlanExercises((prev) => prev.map((pe, i) => (i === idx ? { ...pe, tempo: value } : pe)));
   };
 
+  const updateExerciseNotes = (idx: number, value: string) => {
+    setPlanExercises((prev) => prev.map((pe, i) => (i === idx ? { ...pe, notes: value } : pe)));
+  };
+
   const moveExercise = (idx: number, dir: -1 | 1) => {
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= planExercises.length) return;
     const arr = [...planExercises];
     [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
     setPlanExercises(arr.map((e, i) => ({ ...e, order_index: i })));
+  };
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
+
+  const toggleSelectForGroup = (exerciseId: string) => {
+    setSelectedForGroup((prev) => {
+      if (prev.includes(exerciseId)) return prev.filter((id) => id !== exerciseId);
+      if (prev.length >= 3) return prev;
+      return [...prev, exerciseId];
+    });
+  };
+
+  const createGroup = () => {
+    if (selectedForGroup.length < 2) return;
+    const groupType: "superset" | "triset" = selectedForGroup.length === 3 ? "triset" : "superset";
+    const groupId = crypto.randomUUID();
+
+    setPlanExercises((prev) => {
+      const selectedSet = new Set(selectedForGroup);
+      const firstIdx = prev.findIndex((pe) => selectedSet.has(pe.exercise_id));
+      const selectedItems = prev
+        .filter((pe) => selectedSet.has(pe.exercise_id))
+        .map((pe) => ({ ...pe, group_id: groupId, group_type: groupType }));
+      const others = prev.filter((pe) => !selectedSet.has(pe.exercise_id));
+      // Reinsert the grouped items together at the position of the first selected item.
+      const insertAt = prev.slice(0, firstIdx).filter((pe) => !selectedSet.has(pe.exercise_id)).length;
+      const reordered = [...others.slice(0, insertAt), ...selectedItems, ...others.slice(insertAt)];
+      return reordered.map((pe, i) => ({ ...pe, order_index: i }));
+    });
+    setSelectedForGroup([]);
+    setSelectionMode(false);
+  };
+
+  const ungroup = (groupId: string) => {
+    setPlanExercises((prev) => prev.map((pe) => (pe.group_id === groupId ? { ...pe, group_id: null, group_type: null } : pe)));
   };
 
   const save = async () => {
@@ -166,13 +205,16 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
         target_sets: pe.target_sets,
         rest_seconds: pe.rest_seconds,
         order_index: i,
+        group_id: pe.group_id,
+        group_type: pe.group_type,
+        notes: pe.notes || null,
       }));
       const { error: insertErr } = await supabase.from("workout_plan_exercises").insert(rows);
       if (insertErr) throw insertErr;
 
       const extras: Record<string, PlanExerciseExtras> = {};
       planExercises.forEach((pe) => {
-        extras[pe.exercise_id] = { targetRpe: pe.target_rpe, targetRir: pe.target_rir, tempo: pe.tempo };
+        extras[pe.exercise_id] = { tempo: pe.tempo };
       });
       savePlanExerciseExtras(planId!, extras);
 
@@ -188,6 +230,80 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
 
   const filteredExercises = allExercises.filter(
     (e) => e.name.includes(searchTerm) && !planExercises.find((pe) => pe.exercise_id === e.id)
+  );
+
+  const renderExerciseRow = (pe: PlanExercise, idx: number) => (
+    <div key={pe.exercise_id} className="glass-card p-3 flex items-start gap-2">
+      {selectionMode ? (
+        <button
+          onClick={() => toggleSelectForGroup(pe.exercise_id)}
+          className={`w-6 h-6 mt-1 rounded-md border-2 flex items-center justify-center shrink-0 ${
+            selectedForGroup.includes(pe.exercise_id) ? "bg-primary border-primary" : "border-border"
+          }`}
+        >
+          {selectedForGroup.includes(pe.exercise_id) && <MaterialIcon icon="check" className="text-primary-foreground text-[14px]" />}
+        </button>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <button onClick={() => moveExercise(idx, -1)} className="text-muted-foreground hover:text-foreground">
+            <MaterialIcon icon="keyboard_arrow_up" className="text-[16px]" />
+          </button>
+          <button onClick={() => moveExercise(idx, 1)} className="text-muted-foreground hover:text-foreground">
+            <MaterialIcon icon="keyboard_arrow_down" className="text-[16px]" />
+          </button>
+        </div>
+      )}
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-foreground mb-2">{pe.exercise_name}</p>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="text-[10px] text-muted-foreground">סטים</label>
+            <input
+              type="number"
+              value={pe.target_sets}
+              onChange={(e) => updateExercise(idx, "target_sets", Number(e.target.value))}
+              className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-[10px] text-muted-foreground">מנוחה (שניות)</label>
+            <input
+              type="number"
+              value={pe.rest_seconds}
+              onChange={(e) => updateExercise(idx, "rest_seconds", Number(e.target.value))}
+              className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-2">
+          <div className="flex-1">
+            <label className="text-[9px] text-muted-foreground">טמפו</label>
+            <input
+              type="text"
+              placeholder="3-1-1-0"
+              value={pe.tempo}
+              onChange={(e) => updateExerciseTempo(idx, e.target.value)}
+              className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        </div>
+        <div className="mt-2">
+          <label className="text-[9px] text-muted-foreground">הערות</label>
+          <textarea
+            placeholder="הערות לתרגיל (טכניקה, אחיזה וכו')"
+            value={pe.notes}
+            onChange={(e) => updateExerciseNotes(idx, e.target.value)}
+            rows={2}
+            className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+      {!selectionMode && (
+        <button onClick={() => removeExercise(idx)} className="text-destructive">
+          <MaterialIcon icon="close" className="text-[18px]" />
+        </button>
+      )}
+    </div>
   );
 
   return (
@@ -207,77 +323,63 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
         className="w-full bg-secondary/50 border border-border rounded-xl py-2.5 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
       />
 
-      <div className="space-y-2">
-        {planExercises.map((pe, idx) => (
-          <div key={pe.exercise_id} className="glass-card p-3 flex items-start gap-2">
-            <div className="flex flex-col gap-1">
-              <button onClick={() => moveExercise(idx, -1)} className="text-muted-foreground hover:text-foreground">
-                <MaterialIcon icon="keyboard_arrow_up" className="text-[16px]" />
-              </button>
-              <button onClick={() => moveExercise(idx, 1)} className="text-muted-foreground hover:text-foreground">
-                <MaterialIcon icon="keyboard_arrow_down" className="text-[16px]" />
-              </button>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-foreground mb-2">{pe.exercise_name}</p>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-[10px] text-muted-foreground">סטים</label>
-                  <input
-                    type="number"
-                    value={pe.target_sets}
-                    onChange={(e) => updateExercise(idx, "target_sets", Number(e.target.value))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] text-muted-foreground">מנוחה (שניות)</label>
-                  <input
-                    type="number"
-                    value={pe.rest_seconds}
-                    onChange={(e) => updateExercise(idx, "rest_seconds", Number(e.target.value))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2 mt-2">
-                <div className="flex-1">
-                  <label className="text-[9px] text-muted-foreground">RPE יעד</label>
-                  <input
-                    type="number"
-                    placeholder="—"
-                    value={pe.target_rpe ?? ""}
-                    onChange={(e) => updateExercise(idx, "target_rpe", e.target.value === "" ? null : Number(e.target.value))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[9px] text-muted-foreground">RIR יעד</label>
-                  <input
-                    type="number"
-                    placeholder="—"
-                    value={pe.target_rir ?? ""}
-                    onChange={(e) => updateExercise(idx, "target_rir", e.target.value === "" ? null : Number(e.target.value))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div className="flex-[1.5]">
-                  <label className="text-[9px] text-muted-foreground">טמפו</label>
-                  <input
-                    type="text"
-                    placeholder="3-1-1-0"
-                    value={pe.tempo}
-                    onChange={(e) => updateExerciseTempo(idx, e.target.value)}
-                    className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-              </div>
-            </div>
-            <button onClick={() => removeExercise(idx)} className="text-destructive">
-              <MaterialIcon icon="close" className="text-[18px]" />
+      {planExercises.length >= 2 && (
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => { setSelectionMode((v) => !v); setSelectedForGroup([]); }}
+            className={`text-xs font-bold flex items-center gap-1 ${selectionMode ? "text-destructive" : "text-primary"}`}
+          >
+            <MaterialIcon icon={selectionMode ? "close" : "link"} className="text-[16px]" />
+            {selectionMode ? "ביטול קיבוץ" : "קבץ לסופר-סט / טריפל-סט"}
+          </button>
+          {selectionMode && (
+            <button
+              onClick={createGroup}
+              disabled={selectedForGroup.length < 2}
+              className="text-xs font-bold bg-primary text-primary-foreground px-3 py-1.5 rounded-lg disabled:opacity-40"
+            >
+              {selectedForGroup.length === 3 ? "צור טריפל-סט" : "צור סופר-סט"} ({selectedForGroup.length}/3)
             </button>
-          </div>
-        ))}
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {(() => {
+          const rendered: JSX.Element[] = [];
+          let i = 0;
+          while (i < planExercises.length) {
+            const pe = planExercises[i];
+            if (pe.group_id) {
+              const groupId = pe.group_id;
+              const groupItems: { pe: PlanExercise; idx: number }[] = [];
+              let j = i;
+              while (j < planExercises.length && planExercises[j].group_id === groupId) {
+                groupItems.push({ pe: planExercises[j], idx: j });
+                j++;
+              }
+              rendered.push(
+                <div key={groupId} className="border-2 border-primary/40 rounded-2xl p-2 space-y-2 bg-primary/5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] font-bold text-primary flex items-center gap-1">
+                      <MaterialIcon icon="link" className="text-[14px]" />
+                      {pe.group_type === "triset" ? "טריפל-סט" : "סופר-סט"}
+                    </span>
+                    <button onClick={() => ungroup(groupId)} className="text-[10px] text-muted-foreground hover:text-destructive">
+                      פרק קבוצה
+                    </button>
+                  </div>
+                  {groupItems.map(({ pe: gpe, idx: gidx }) => renderExerciseRow(gpe, gidx))}
+                </div>
+              );
+              i = j;
+            } else {
+              rendered.push(renderExerciseRow(pe, i));
+              i++;
+            }
+          }
+          return rendered;
+        })()}
       </div>
 
       {showPicker ? (

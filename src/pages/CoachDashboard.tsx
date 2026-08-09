@@ -1041,7 +1041,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                                 // Load full plan data for editing
                                 const { data: exData } = await supabase
                                   .from("workout_plan_exercises")
-                                  .select("exercise_id, target_sets, rest_seconds, order_index")
+                                  .select("exercise_id, target_sets, rest_seconds, order_index, group_id, group_type, notes")
                                   .eq("plan_id", p.id)
                                   .order("order_index");
                                 const exerciseIds = (exData ?? []).map((e) => e.exercise_id);
@@ -1060,6 +1060,9 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                                     target_sets: e.target_sets,
                                     rest_seconds: e.rest_seconds,
                                     order_index: e.order_index,
+                                    group_id: e.group_id,
+                                    group_type: e.group_type,
+                                    notes: e.notes ?? "",
                                   })),
                                 });
                                 setEditingPlan(p.id);
