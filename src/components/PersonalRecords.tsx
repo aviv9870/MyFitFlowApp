@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type RefObject } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
-import html2canvas from "html2canvas";
+import { toBlob } from "html-to-image";
 import confetti from "canvas-confetti";
 
 interface SetLog {
@@ -130,16 +130,16 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
   const takeScreenshot = async (ref: RefObject<HTMLDivElement>) => {
     if (!ref.current) return;
     try {
-      const canvas = await html2canvas(ref.current, {
-        backgroundColor: "#0a0a0a",
-        scale: 2,
-      });
+      // html-to-image serializes the DOM into an SVG <foreignObject> and lets
+      // the browser rasterize it natively, so it renders this app's oklch()
+      // colors and CSS variables correctly (unlike html2canvas, which parses
+      // CSS itself and doesn't understand oklch() at all).
+      const blob = await toBlob(ref.current, { backgroundColor: "#0a0a0a", pixelRatio: 2 });
+      if (!blob) throw new Error("Failed to generate image");
 
       const filename = `records_${planName}_${new Date().toISOString().slice(0, 10)}.png`;
 
       const shareViaNative = async () => {
-        const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-        if (!blob) return false;
         const file = new File([blob], filename, { type: "image/png" });
         const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean; share?: (data: { files: File[]; title?: string; text?: string }) => Promise<void> };
         if (nav.canShare && nav.share && nav.canShare({ files: [file] })) {
@@ -151,10 +151,12 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
 
       const shared = await shareViaNative();
       if (!shared) {
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.download = filename;
-        link.href = canvas.toDataURL("image/png");
+        link.href = url;
         link.click();
+        URL.revokeObjectURL(url);
         toast.success("צילום מסך נשמר!");
       }
     } catch (err) {
