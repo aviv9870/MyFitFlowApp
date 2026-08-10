@@ -7,21 +7,27 @@ const corsHeaders = {
 
 const GEMINI_MODEL = "gemini-2.0-flash";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+const CEREBRAS_MODEL = "gpt-oss-120b";
 
-async function callGroq(
+// Groq and Cerebras both expose an OpenAI-compatible chat/completions API
+// with function calling, so they share this implementation.
+async function callOpenAICompatible(
+  providerName: string,
+  baseUrl: string,
   apiKey: string,
+  model: string,
   systemPrompt: string,
   userPrompt: string,
   toolName: string,
   toolParams: any,
   signal: AbortSignal,
 ): Promise<any> {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const response = await fetch(baseUrl, {
     method: "POST",
     signal,
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -43,8 +49,8 @@ async function callGroq(
 
   if (!response.ok) {
     const text = await response.text();
-    console.error("Groq error:", response.status, text);
-    const err = new Error("Groq API error: " + response.status) as any;
+    console.error(`${providerName} error:`, response.status, text);
+    const err = new Error(`${providerName} API error: ` + response.status) as any;
     err.status = response.status;
     throw err;
   }
@@ -52,11 +58,53 @@ async function callGroq(
   const data = await response.json();
   const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
   if (!toolCall) {
-    console.error("Unexpected Groq response:", JSON.stringify(data));
-    throw new Error("תגובה לא צפויה מ-Groq");
+    console.error(`Unexpected ${providerName} response:`, JSON.stringify(data));
+    throw new Error(`תגובה לא צפויה מ-${providerName}`);
   }
 
   return JSON.parse(toolCall.function.arguments);
+}
+
+async function callGroq(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  toolName: string,
+  toolParams: any,
+  signal: AbortSignal,
+): Promise<any> {
+  return callOpenAICompatible(
+    "Groq",
+    "https://api.groq.com/openai/v1/chat/completions",
+    apiKey,
+    GROQ_MODEL,
+    systemPrompt,
+    userPrompt,
+    toolName,
+    toolParams,
+    signal,
+  );
+}
+
+async function callCerebras(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  toolName: string,
+  toolParams: any,
+  signal: AbortSignal,
+): Promise<any> {
+  return callOpenAICompatible(
+    "Cerebras",
+    "https://api.cerebras.ai/v1/chat/completions",
+    apiKey,
+    CEREBRAS_MODEL,
+    systemPrompt,
+    userPrompt,
+    toolName,
+    toolParams,
+    signal,
+  );
 }
 
 async function callGemini(
@@ -129,7 +177,8 @@ serve(async (req) => {
 
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-    if (!GEMINI_API_KEY && !GROQ_API_KEY) throw new Error("No AI provider configured");
+    const CEREBRAS_API_KEY = Deno.env.get("CEREBRAS_API_KEY");
+    if (!GEMINI_API_KEY && !GROQ_API_KEY && !CEREBRAS_API_KEY) throw new Error("No AI provider configured");
 
     let systemPrompt = "";
     let userPrompt = "";
@@ -261,20 +310,33 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
-      // Gemini is the primary provider; Groq is a fallback so the feature
-      // still works if Gemini is unavailable (e.g. quota/billing issues).
-      let result;
+      // Gemini is the primary provider; Groq and then Cerebras are fallbacks
+      // so the feature still works if Gemini (or Groq) is unavailable
+      // (e.g. quota/billing issues).
+      const providers: { name: string; call: () => Promise<any> }[] = [];
       if (GEMINI_API_KEY) {
-        try {
-          result = await callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
-        } catch (geminiErr) {
-          console.error("Gemini failed:", geminiErr);
-          if (!GROQ_API_KEY) throw geminiErr;
-          result = await callGroq(GROQ_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
-        }
-      } else {
-        result = await callGroq(GROQ_API_KEY!, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+        providers.push({ name: "Gemini", call: () => callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
       }
+      if (GROQ_API_KEY) {
+        providers.push({ name: "Groq", call: () => callGroq(GROQ_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
+      }
+      if (CEREBRAS_API_KEY) {
+        providers.push({ name: "Cerebras", call: () => callCerebras(CEREBRAS_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
+      }
+
+      let result;
+      let lastErr: unknown;
+      for (const provider of providers) {
+        try {
+          result = await provider.call();
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          console.error(`${provider.name} failed:`, err);
+          lastErr = err;
+        }
+      }
+      if (lastErr) throw lastErr;
       clearTimeout(timeoutId);
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
