@@ -6,6 +6,58 @@ const corsHeaders = {
 };
 
 const GEMINI_MODEL = "gemini-2.0-flash";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+async function callGroq(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  toolName: string,
+  toolParams: any,
+  signal: AbortSignal,
+): Promise<any> {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: toolName,
+            description: `Provide ${toolName} data`,
+            parameters: toolParams,
+          },
+        },
+      ],
+      tool_choice: { type: "function", function: { name: toolName } },
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error("Groq error:", response.status, text);
+    const err = new Error("Groq API error: " + response.status) as any;
+    err.status = response.status;
+    throw err;
+  }
+
+  const data = await response.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (!toolCall) {
+    console.error("Unexpected Groq response:", JSON.stringify(data));
+    throw new Error("תגובה לא צפויה מ-Groq");
+  }
+
+  return JSON.parse(toolCall.function.arguments);
+}
 
 async function callGemini(
   apiKey: string,
@@ -76,7 +128,8 @@ serve(async (req) => {
     const { type } = body;
 
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GEMINI_API_KEY && !GROQ_API_KEY) throw new Error("No AI provider configured");
 
     let systemPrompt = "";
     let userPrompt = "";
@@ -208,7 +261,20 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
-      const result = await callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+      // Gemini is the primary provider; Groq is a fallback so the feature
+      // still works if Gemini is unavailable (e.g. quota/billing issues).
+      let result;
+      if (GEMINI_API_KEY) {
+        try {
+          result = await callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+        } catch (geminiErr) {
+          console.error("Gemini failed:", geminiErr);
+          if (!GROQ_API_KEY) throw geminiErr;
+          result = await callGroq(GROQ_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+        }
+      } else {
+        result = await callGroq(GROQ_API_KEY!, systemPrompt, userPrompt, toolName, toolParams, controller.signal);
+      }
       clearTimeout(timeoutId);
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
