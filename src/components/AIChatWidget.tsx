@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import { useGender } from "@/hooks/useGender";
 
 interface Message {
   role: "user" | "ai";
@@ -10,6 +11,7 @@ interface Message {
 
 const AIChatWidget = () => {
   const { user } = useAuth();
+  const gender = useGender();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -37,11 +39,13 @@ const AIChatWidget = () => {
         .order("created_at", { ascending: false })
         .limit(30);
 
+      const genderContext = gender === "female" ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
         body: {
           type: "chat",
           question: userMsg,
           history: { sessions: history, sets },
+          genderContext,
         },
       });
 

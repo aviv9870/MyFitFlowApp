@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { useGender } from "@/hooks/useGender";
 
 const MUSCLE_COLORS: Record<string, string> = {
   "חזה": "#FF6B6B",
@@ -21,6 +22,7 @@ const MUSCLE_COLORS: Record<string, string> = {
 
 const Analytics = () => {
   const { user } = useAuth();
+  const gender = useGender();
   const [stats, setStats] = useState({ totalWorkouts: 0, avgDuration: 0, improvement: 0 });
 
   const [aiInsights, setAiInsights] = useState<{ insights: string[]; recommendation: string } | null>(null);
@@ -237,8 +239,9 @@ const Analytics = () => {
         .order("created_at", { ascending: false })
         .limit(50);
 
+      const genderContext = gender === "female" ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
-        body: { type: "analyze", history: { sessions: history, sets } },
+        body: { type: "analyze", history: { sessions: history, sets }, genderContext },
       });
 
       if (error) throw error;

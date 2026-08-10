@@ -87,8 +87,9 @@ const Dashboard = () => {
         .order("created_at", { ascending: false })
         .limit(50);
 
+      const genderContext = isFemale ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
-        body: { type: "analyze", history: { sessions: history, sets } },
+        body: { type: "analyze", history: { sessions: history, sets }, genderContext },
       });
 
       if (error) throw error;

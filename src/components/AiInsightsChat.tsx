@@ -43,11 +43,13 @@ const AiInsightsChat = ({ user, isFemale, loadingAi, aiInsights, fetchAiInsights
         .order("created_at", { ascending: false })
         .limit(30);
 
+      const genderContext = isFemale ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
         body: {
           type: "chat",
           question: userMsg,
           history: { sessions: history, sets },
+          genderContext,
         },
       });
 

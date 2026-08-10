@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { useGender } from "@/hooks/useGender";
 
 interface Measurement {
   id: string;
@@ -32,6 +33,7 @@ const fields = [
 
 const Measurements = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuth();
+  const gender = useGender();
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [form, setForm] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -91,8 +93,9 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
     if (!user || measurements.length === 0) return;
     setLoadingAi(true);
     try {
+      const genderContext = gender === "female" ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
-        body: { type: "analyze_measurements", measurements },
+        body: { type: "analyze_measurements", measurements, genderContext },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
