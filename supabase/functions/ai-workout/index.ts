@@ -188,7 +188,7 @@ serve(async (req) => {
     if (type === "analyze") {
       const { history, genderContext } = body;
       systemPrompt = `אתה מאמן כושר אישי שמכיר את המתאמן שלך היטב ומדבר איתו ישירות, כמו בשיחה אחרי אימון - לא כמו דוח רובוטי. ${genderContext ?? "פנה אליו בלשון זכר."}
-פנה תמיד ישירות למתאמן בגוף שני ("אתה מתקדם יפה", "שמתי לב שאתה...", "כדאי שתנסה") - אף פעם אל תכתוב עליו בגוף שלישי ("המשתמש", "המתאמן מבצע"). התייחס למספרים האמיתיים מההיסטוריה (תדירות, משקלים, תרגילים חוזרים) כדי שהתובנה תרגיש אישית ולא כללית. הימנע מניסוחים סתמיים כמו "המשתמש מבצע אימונים בתדירות גבוהה" - כתוב במקום זאת משהו שממש נשען על הנתונים הספציפיים שלו. טון חם, ישיר וקצת בלתי פורמלי, כמו מאמן שבאמת עוקב אחריך, לא כמו תבנית.`;
+פנה תמיד ישירות למתאמן בגוף שני (אתה מתקדם יפה, שמתי לב שאתה..., כדאי שתנסה) - אף פעם אל תכתוב עליו בגוף שלישי (המשתמש, המתאמן מבצע). התייחס למספרים האמיתיים מההיסטוריה (תדירות, משקלים, תרגילים חוזרים) כדי שהתובנה תרגיש אישית ולא כללית, אבל שלב את שמות התרגילים והתוכניות בתוך המשפט בצורה טבעית בלי מרכאות סביבם. הימנע מניסוחים סתמיים כמו "המשתמש מבצע אימונים בתדירות גבוהה" - כתוב במקום זאת משהו שממש נשען על הנתונים הספציפיים שלו. טון חם, ישיר וקצת בלתי פורמלי, כמו מאמן שבאמת עוקב אחריך, לא כמו תבנית.`;
       userPrompt = `היסטוריית אימונים:\n${JSON.stringify(history)}`;
       toolName = "provide_analysis";
       toolParams = {
@@ -270,7 +270,7 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
         ? `\nשיאים אישיים שנשברו באימון הזה: ${JSON.stringify(workout.personalRecords)}. ציין את השיאים האלה בתובנות שלך והצף אותם!`
         : "";
       systemPrompt = `אתה מאמן כושר אישי שמדבר ישירות עם המתאמן שלו רגע אחרי שסיים אימון. ${genderContext ?? "פנה אל המשתמש בלשון זכר."}
-פנה תמיד בגוף שני ("עשית עבודה טובה על...", "שמתי לב ש...") ולא בגוף שלישי. התייחס לנתונים הספציפיים של האימון הזה (תרגילים, משקלים, נפח) כדי שהתובנה תרגיש כמו משוב אמיתי ולא תבנית גנרית. טון חם, אנרגטי ואישי, כמו מאמן שממש עקב אחרי האימון. התמקד בביצוע, נפח, ונקודות לשיפור.${prContext}`;
+פנה תמיד בגוף שני (עשית עבודה טובה על..., שמתי לב ש...) ולא בגוף שלישי. התייחס לנתונים הספציפיים של האימון הזה (תרגילים, משקלים, נפח) כדי שהתובנה תרגיש כמו משוב אמיתי ולא תבנית גנרית, אבל שלב את שמות התרגילים בתוך המשפט בצורה טבעית בלי מרכאות סביבם. טון חם, אנרגטי ואישי, כמו מאמן שממש עקב אחרי האימון. התמקד בביצוע, נפח, ונקודות לשיפור.${prContext}`;
       userPrompt = `נתוני אימון:\n${JSON.stringify(workout)}`;
       toolName = "provide_analysis";
       toolParams = {
@@ -283,7 +283,7 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
       };
     } else if (type === "coach_report") {
       const { traineeName, history } = body;
-      systemPrompt = `אתה מאמן כושר מקצועי שכותב דוחות אימון מותאמים אישית למתאמנים שלו. כתוב דוח שנשמע כאילו המאמן עצמו כותב אותו ישירות למתאמן. פנה למתאמן בגוף שני ("אתה עשית", "התקדמת", "אני רואה ש..."). הדוח צריך לכלול: סיכום ביצועים אחרונים, נקודות חוזקה, תחומים לשיפור, והמלצות ספציפיות. כתוב בעברית, בטון חם ומקצועי, כמו מאמן שמדבר למתאמן שלו. אל תשתמש בכוכביות או בפורמט מרקדאון - כתוב טקסט רגיל בלבד עם שורות חדשות.`;
+      systemPrompt = `אתה מאמן כושר מקצועי שכותב דוחות אימון מותאמים אישית למתאמנים שלו. כתוב דוח שנשמע כאילו המאמן עצמו כותב אותו ישירות למתאמן. פנה למתאמן בגוף שני (אתה עשית, התקדמת, אני רואה ש...). הדוח צריך לכלול: סיכום ביצועים אחרונים, נקודות חוזקה, תחומים לשיפור, והמלצות ספציפיות. שלב את שמות התוכניות והתרגילים בתוך המשפטים בצורה טבעית בלי מרכאות סביבם. כתוב בעברית, בטון חם ומקצועי, כמו מאמן שמדבר למתאמן שלו. אל תשתמש בכוכביות או בפורמט מרקדאון - כתוב טקסט רגיל בלבד עם שורות חדשות.`;
       userPrompt = `שם המתאמן: ${traineeName}\nהיסטוריית אימונים:\n${JSON.stringify(history)}`;
       toolName = "provide_report";
       toolParams = {
@@ -331,14 +331,30 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
       let result;
       let lastErr: unknown;
       for (const provider of providers) {
-        try {
-          result = await provider.call();
-          lastErr = undefined;
-          break;
-        } catch (err) {
-          console.error(`${provider.name} failed:`, err);
-          lastErr = err;
+        // LLM function-calling occasionally emits invalid UTF-8 (U+FFFD) for
+        // Hebrew substrings copied into tool-call arguments - retry the same
+        // provider a few times before giving up on it, since this is a
+        // transient generation glitch, not a systemic failure. Don't retry
+        // on real API errors (bad key, no quota/billing) - those fail the
+        // same way every time, so move straight to the next provider.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const attemptResult = await provider.call();
+            if (JSON.stringify(attemptResult).includes("�")) {
+              lastErr = new Error(`${provider.name} returned corrupted (invalid UTF-8) text`);
+              console.error(`${provider.name} attempt ${attempt + 1} corrupted, retrying`);
+              continue;
+            }
+            result = attemptResult;
+            lastErr = undefined;
+            break;
+          } catch (err) {
+            console.error(`${provider.name} failed:`, err);
+            lastErr = err;
+            break;
+          }
         }
+        if (!lastErr) break;
       }
       if (lastErr) throw lastErr;
       clearTimeout(timeoutId);
