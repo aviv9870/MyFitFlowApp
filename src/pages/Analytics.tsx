@@ -47,9 +47,9 @@ const MUSCLE_COLORS: Record<string, string> = {
   "יד קדמית": "#C58AF2",
   "יד אחורית": "#F2789A",
   "בטן": "#FF9F5B",
-  "אחר": "hsl(var(--muted-foreground))",
+  "אחר": "oklch(var(--muted-foreground))",
 };
-const muscleColor = (name: string) => MUSCLE_COLORS[name] ?? "hsl(var(--primary))";
+const muscleColor = (name: string) => MUSCLE_COLORS[name] ?? "oklch(var(--primary))";
 
 // Indirect (synergist) credit can produce values like 3.5 - round to the
 // nearest half-set and drop the trailing .0 for whole numbers.
@@ -470,14 +470,14 @@ const Analytics = () => {
                   >
                     <defs>
                       <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        <stop offset="0%" stopColor="oklch(var(--primary))" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="oklch(var(--primary))" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid horizontal={true} vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
+                    <CartesianGrid horizontal={true} vertical={false} stroke="oklch(var(--border))" strokeOpacity={0.4} />
                     <XAxis
                       dataKey="label"
-                      tick={{ fontSize: 9.5, fill: "hsl(var(--muted-foreground))" }}
+                      tick={{ fontSize: 9.5, fill: "oklch(var(--muted-foreground))" }}
                       interval="preserveStartEnd"
                       axisLine={false}
                       tickLine={false}
@@ -491,11 +491,11 @@ const Analytics = () => {
                     <Area
                       type="monotone"
                       dataKey="value"
-                      stroke="hsl(var(--primary))"
+                      stroke="oklch(var(--primary))"
                       strokeWidth={2.5}
                       fill="url(#volumeFill)"
                       dot={false}
-                      activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
+                      activeDot={{ r: 4, fill: "oklch(var(--primary))" }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

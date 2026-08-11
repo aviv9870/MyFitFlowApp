@@ -43,10 +43,10 @@ const RestTimer = ({ seconds, endAt, onDone, progressMessage }: Props) => {
           {/* Progress ring */}
           <div className="relative w-20 h-20 shrink-0">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(var(--secondary))" strokeWidth="8" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="oklch(var(--secondary))" strokeWidth="8" />
               <circle
                 cx="50" cy="50" r="42" fill="none"
-                stroke="hsl(var(--primary))"
+                stroke="oklch(var(--primary))"
                 strokeWidth="8"
                 strokeDasharray={`${2 * Math.PI * 42}`}
                 strokeDashoffset={`${2 * Math.PI * 42 * (1 - pct / 100)}`}

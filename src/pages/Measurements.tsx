@@ -257,14 +257,14 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
                       setActiveIdx((prev) => (prev === idx ? null : idx));
                     }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
                     <XAxis
                       dataKey="date"
-                      tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                      tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
                       interval="preserveStartEnd"
                     />
                     <YAxis
-                      tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                      tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
                       width={40}
                       domain={["auto", "auto"]}
                     />
@@ -276,9 +276,9 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
                     <Line
                       type="monotone"
                       dataKey="value"
-                      stroke="hsl(var(--primary))"
+                      stroke="oklch(var(--primary))"
                       strokeWidth={2}
-                      dot={{ r: 3, fill: "hsl(var(--primary))" }}
+                      dot={{ r: 3, fill: "oklch(var(--primary))" }}
                       activeDot={{ r: 5 }}
                     />
                   </LineChart>

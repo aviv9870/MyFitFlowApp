@@ -19,17 +19,17 @@ const ChartTooltip = ({ active, payload, label, unit, valueLabel, formatValue }:
   return (
     <div
       style={{
-        background: "hsl(var(--card))",
-        border: "1px solid hsl(var(--border))",
+        background: "oklch(var(--card))",
+        border: "1px solid oklch(var(--border))",
         borderRadius: 8,
         padding: "6px 10px",
         fontSize: 12,
       }}
     >
       {label && (
-        <div style={{ color: "hsl(var(--muted-foreground))", marginBottom: 2, fontSize: 11 }}>{label}</div>
+        <div style={{ color: "oklch(var(--muted-foreground))", marginBottom: 2, fontSize: 11 }}>{label}</div>
       )}
-      <div style={{ color: "hsl(var(--foreground))", fontWeight: 600 }}>
+      <div style={{ color: "oklch(var(--foreground))", fontWeight: 600 }}>
         {valueLabel ? `${valueLabel}: ` : ""}
         {display}
       </div>

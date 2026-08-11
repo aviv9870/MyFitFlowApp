@@ -898,15 +898,15 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                               setActiveProgressIdx((prev) => (prev === idx ? null : idx));
                             }}
                           >
-                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
-                            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} />
+                            <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
+                            <XAxis dataKey="date" tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} interval="preserveStartEnd" />
+                            <YAxis tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} width={45} />
                             <Tooltip
                               active={activeProgressIdx !== null}
                               defaultIndex={activeProgressIdx ?? undefined}
                               content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />}
                             />
-                            <Line type="monotone" dataKey="volume" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "hsl(var(--primary))" }} />
+                            <Line type="monotone" dataKey="volume" stroke="oklch(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "oklch(var(--primary))" }} />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
@@ -929,7 +929,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                             <div key={d.name} className="flex items-center gap-2">
                               <span className="text-[11px] text-foreground w-16 text-right shrink-0">{d.name}</span>
                               <div className="flex-1 h-5 bg-secondary/50 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: MUSCLE_COLORS[d.name] || "hsl(var(--primary))" }} />
+                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: MUSCLE_COLORS[d.name] || "oklch(var(--primary))" }} />
                               </div>
                               <span className="text-[10px] text-muted-foreground w-10 shrink-0">{pct.toFixed(0)}%</span>
                             </div>
@@ -982,9 +982,9 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                           setActiveWeightIdx((prev) => (prev === idx ? null : idx));
                         }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
-                        <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
+                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
                         <Tooltip
                           active={activeWeightIdx !== null}
                           defaultIndex={activeWeightIdx ?? undefined}
