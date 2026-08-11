@@ -23,7 +23,7 @@ const MUSCLE_COLORS: Record<string, string> = {
 const Analytics = () => {
   const { user } = useAuth();
   const gender = useGender();
-  const [stats, setStats] = useState({ totalWorkouts: 0, avgDuration: 0, improvement: 0 });
+  const [stats, setStats] = useState({ totalWorkouts: 0, avgDuration: 0, improvement: 0, isBaseWeek: false });
 
   const [aiInsights, setAiInsights] = useState<{ insights: string[]; recommendation: string } | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
@@ -56,7 +56,7 @@ const Analytics = () => {
     const recentCount = recentSessions?.length ?? 0;
     const avgDur = recentSessions?.reduce((a, s) => a + s.duration_seconds, 0) ?? 0;
 
-    // === Strength Progress (1RM Brzycki) ===
+    // === Weekly Training Improvement (body weight is intentionally excluded) ===
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
@@ -73,85 +73,59 @@ const Analytics = () => {
       .gte("created_at", fourteenDaysAgo.toISOString())
       .lt("created_at", sevenDaysAgo.toISOString());
 
-    const calc1RM = (weight: number, reps: number) => {
-      if (reps <= 0 || weight <= 0) return 0;
-      if (reps === 1) return weight;
-      return weight / (1.0278 - 0.0278 * reps);
-    };
+    const recent = recentSets ?? [];
+    const older = olderSets ?? [];
 
-    // Get best estimated 1RM per exercise
-    const getBest1RM = (sets: { exercise_name: string; weight: number; reps: number }[]) => {
+    // Estimated 1RM via Epley: weight * (1 + reps / 30)
+    const epley1RM = (weight: number, reps: number) => weight * (1 + reps / 30);
+
+    // Best (top-set) e1RM per exercise
+    const bestE1RMByExercise = (sets: { exercise_name: string; weight: number; reps: number }[]) => {
       const map: Record<string, number> = {};
       sets.forEach((s) => {
         if (s.reps <= 0 || s.weight <= 0) return;
-        const est = calc1RM(s.weight, s.reps);
-        if (!map[s.exercise_name] || est > map[s.exercise_name]) {
-          map[s.exercise_name] = est;
+        const e1rm = epley1RM(s.weight, s.reps);
+        if (!map[s.exercise_name] || e1rm > map[s.exercise_name]) {
+          map[s.exercise_name] = e1rm;
         }
       });
       return map;
     };
 
-    const recent1RM = getBest1RM(recentSets ?? []);
-    const older1RM = getBest1RM(olderSets ?? []);
+    let improvement = 0;
+    let isBaseWeek = false;
 
-    // Calculate per-exercise improvement, capped at 15%
-    const exerciseImprovements: number[] = [];
-    const allExercises = new Set([...Object.keys(recent1RM), ...Object.keys(older1RM)]);
-    allExercises.forEach((ex) => {
-      const curr = recent1RM[ex];
-      const prev = older1RM[ex];
-      if (!curr || !prev || prev <= 0) return;
-      const pEx = Math.min(((curr / prev) - 1) * 100, 15);
-      exerciseImprovements.push(pEx);
-    });
-
-    const strengthScore = exerciseImprovements.length > 0
-      ? exerciseImprovements.reduce((a, b) => a + b, 0) / exerciseImprovements.length
-      : null;
-
-    // === Body Progress (B) ===
-    const { data: currentWeightRows } = await supabase
-      .from("body_weight_logs")
-      .select("weight")
-      .eq("user_id", user.id)
-      .gte("logged_at", sevenDaysAgo.toISOString())
-      .order("logged_at", { ascending: false })
-      .limit(1);
-
-    const { data: prevWeightRows } = await supabase
-      .from("body_weight_logs")
-      .select("weight")
-      .eq("user_id", user.id)
-      .gte("logged_at", fourteenDaysAgo.toISOString())
-      .lt("logged_at", sevenDaysAgo.toISOString())
-      .order("logged_at", { ascending: false })
-      .limit(1);
-
-    const currWeight = currentWeightRows?.[0]?.weight;
-    const prevWeight = prevWeightRows?.[0]?.weight;
-
-    let bodyScore: number | null = null;
-    if (currWeight && prevWeight && prevWeight > 0) {
-      bodyScore = Math.abs((currWeight - prevWeight) / prevWeight) * 100;
-    }
-
-    // === Combined Score ===
-    let improvement: number;
-    if (strengthScore !== null && bodyScore !== null) {
-      improvement = 0.7 * strengthScore + 0.3 * bodyScore;
-    } else if (strengthScore !== null) {
-      improvement = strengthScore;
-    } else if (bodyScore !== null) {
-      improvement = bodyScore;
+    if (older.length === 0) {
+      // No data at all from last week - nothing to compare against yet
+      isBaseWeek = true;
     } else {
-      improvement = 0;
+      const recentBest = bestE1RMByExercise(recent);
+      const olderBest = bestE1RMByExercise(older);
+      const matchedExercises = Object.keys(recentBest).filter((ex) => olderBest[ex] !== undefined && olderBest[ex] > 0);
+
+      if (matchedExercises.length > 0) {
+        // Matched-exercise e1RM improvement, averaged across exercises trained in both weeks
+        const pctChanges = matchedExercises.map(
+          (ex) => ((recentBest[ex] - olderBest[ex]) / olderBest[ex]) * 100
+        );
+        improvement = pctChanges.reduce((a, b) => a + b, 0) / pctChanges.length;
+      } else {
+        // Fallback: change in volume-per-working-set when no exercise overlaps between weeks
+        const volumePerSet = (sets: { weight: number; reps: number }[]) =>
+          sets.length > 0 ? sets.reduce((a, s) => a + s.weight * s.reps, 0) / sets.length : null;
+        const recentVPS = volumePerSet(recent);
+        const olderVPS = volumePerSet(older);
+        if (recentVPS !== null && olderVPS !== null && olderVPS > 0) {
+          improvement = ((recentVPS - olderVPS) / olderVPS) * 100;
+        }
+      }
     }
 
     setStats({
       totalWorkouts: recentCount,
       avgDuration: recentCount > 0 ? Math.floor(avgDur / recentCount / 60) : 0,
       improvement: Math.round(improvement * 10) / 10,
+      isBaseWeek,
     });
 
     const { data: setLogs } = await supabase
@@ -366,13 +340,27 @@ const Analytics = () => {
       {/* Main Progress Card */}
       <div className="glass-card p-4 mb-4 border-r-2 border-primary">
         <h3 className="text-sm font-semibold text-foreground mb-1">שיפור שבועי</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-3xl font-bold neon-text">{stats.improvement > 0 ? "+" : ""}{stats.improvement}%</span>
-          <MaterialIcon icon={stats.improvement >= 0 ? "trending_up" : "trending_down"} className="text-primary text-[24px]" />
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">
-          שילוב 70% כוח (1RM Brzycki) + 30% שינוי משקל גוף
-        </p>
+        {stats.isBaseWeek ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-foreground">שבוע בסיס</span>
+              <MaterialIcon icon="flag" className="text-primary text-[22px]" />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              עדיין אין אימונים משבוע קודם להשוואה - השיפור יוצג משבוע הבא
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold neon-text">{stats.improvement > 0 ? "+" : ""}{stats.improvement}%</span>
+              <MaterialIcon icon={stats.improvement >= 0 ? "trending_up" : "trending_down"} className="text-primary text-[24px]" />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              שינוי ב-1RM המשוער (Epley) בתרגילים שחזרו על עצמם השבוע לעומת שבוע שעבר
+            </p>
+          </>
+        )}
       </div>
 
       {/* Metrics Grid */}

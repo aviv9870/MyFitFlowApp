@@ -10,13 +10,20 @@ interface Props {
 
 const RestTimer = ({ seconds, endAt, onDone, progressMessage }: Props) => {
   const [remaining, setRemaining] = useState(() => Math.max(0, Math.ceil((endAt - Date.now()) / 1000)));
+  const [showDoneAlert, setShowDoneAlert] = useState(false);
+  const doneFiredRef = useRef(false);
 
   useEffect(() => {
     const tick = () => {
       const left = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       setRemaining(left);
-      if (left <= 0) {
-        onDone();
+      if (left <= 0 && !doneFiredRef.current) {
+        doneFiredRef.current = true;
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        setShowDoneAlert(true);
+        // Give the center alert a moment on screen before actually unmounting
+        // the timer (which is what onDone triggers in the parent).
+        window.setTimeout(onDone, 1400);
       }
     };
 
@@ -77,6 +84,17 @@ const RestTimer = ({ seconds, endAt, onDone, progressMessage }: Props) => {
           />
         </div>
       </div>
+
+      {/* Center-screen alert when rest naturally ends */}
+      {showDoneAlert && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
+          <div className="glass-card border border-primary/40 shadow-2xl shadow-primary/20 rounded-2xl px-8 py-6 flex flex-col items-center gap-2 animate-in zoom-in-95 duration-300">
+            <MaterialIcon icon="alarm" className="text-primary text-[40px]" />
+            <p className="text-lg font-bold text-foreground">זמן המנוחה הסתיים!</p>
+            <p className="text-xs text-muted-foreground">קדימה, לסט הבא 💪</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

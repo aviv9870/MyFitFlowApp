@@ -11,6 +11,7 @@ import AiInsightsChat from "@/components/AiInsightsChat";
 import AppSidebar from "@/components/AppSidebar";
 import CoachDashboard from "@/pages/CoachDashboard";
 import Measurements from "@/pages/Measurements";
+import WeightHistory from "@/pages/WeightHistory";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ const Dashboard = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showCoach, setShowCoach] = useState(false);
   const [showMeasurements, setShowMeasurements] = useState(false);
+  const [showWeightHistory, setShowWeightHistory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [gender, setGender] = useState<string>("male");
 
@@ -113,6 +115,7 @@ const Dashboard = () => {
   if (showHistory) return <History onClose={() => setShowHistory(false)} />;
   if (showCoach) return <CoachDashboard onClose={() => setShowCoach(false)} />;
   if (showMeasurements) return <Measurements onClose={() => setShowMeasurements(false)} />;
+  if (showWeightHistory) return <WeightHistory onClose={() => setShowWeightHistory(false)} />;
 
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
@@ -176,7 +179,7 @@ const Dashboard = () => {
       </button>
 
       <div className="flex gap-3 mb-3.5">
-        <div className="flex-1 glass-card p-[14px]">
+        <button onClick={() => setShowWeightHistory(true)} className="flex-1 glass-card p-[14px] text-right">
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-[11.5px] text-muted-foreground">משקל גוף</span>
             <MaterialIcon icon="monitor_weight" className="text-muted-foreground/70 text-[14px]" />
@@ -184,7 +187,7 @@ const Dashboard = () => {
           <p className="text-2xl font-bold tracking-tight text-foreground">
             {currentWeight ?? "—"} <span className="text-[13px] font-medium text-muted-foreground">ק״ג</span>
           </p>
-        </div>
+        </button>
         <button onClick={() => lastSession && setShowSummary(true)} className="flex-1 glass-card p-[14px] text-right">
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-[11.5px] text-muted-foreground">אימון אחרון</span>
