@@ -1,24 +1,36 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useGender } from "@/hooks/useGender";
 
-const MUSCLE_COLORS: Record<string, string> = {
-  "חזה": "#FF6B6B",
-  "גב": "#4ECDC4",
-  "כתפיים": "#45B7D1",
-  "רגליים": "#96CEB4",
-  "יד קדמית": "#FFEAA7",
-  "יד אחורית": "#DDA0DD",
-  "ישבן": "#FF69B4",
-  "בטן": "#FF8C42",
-  "אמות": "#87CEEB",
-  "קרדיו": "#98FB98",
-  "פונקציונלי": "#DEB887",
+type RangeKey = "week" | "month" | "year";
+
+const RANGE_TABS: { key: RangeKey; label: string }[] = [
+  { key: "week", label: "שבוע" },
+  { key: "month", label: "חודש" },
+  { key: "year", label: "שנה" },
+];
+
+const RANGE_CONFIG: Record<RangeKey, { days: number; label: string; bucket: "day" | "month" }> = {
+  week: { days: 7, label: "נפח אימון שבועי", bucket: "day" },
+  month: { days: 30, label: "נפח אימון חודשי", bucket: "day" },
+  year: { days: 365, label: "נפח אימון שנתי", bucket: "month" },
 };
+
+// Bars are always sorted by rank (highest share first) and colored by a
+// stepped-down intensity of the theme's primary color, so color itself
+// communicates rank instead of an arbitrary per-muscle color map.
+const RANK_OPACITIES = [1, 0.8, 0.62, 0.48, 0.36, 0.26];
+const rankColor = (i: number) => `hsl(var(--primary) / ${RANK_OPACITIES[Math.min(i, RANK_OPACITIES.length - 1)]})`;
+
+interface VolumeTrend {
+  points: { label: string; value: number }[];
+  total: number;
+  deltaPct: number | null;
+}
 
 const Analytics = () => {
   const { user } = useAuth();
@@ -27,14 +39,97 @@ const Analytics = () => {
 
   const [aiInsights, setAiInsights] = useState<{ insights: string[]; recommendation: string } | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
-  const [muscleVolumes, setMuscleVolumes] = useState<Record<string, number>>({});
-  const [showProgress, setShowProgress] = useState(false);
-  const [progressData, setProgressData] = useState<any[]>([]);
-  const [loadingProgress, setLoadingProgress] = useState(false);
+
+  const [range, setRange] = useState<RangeKey>("week");
+  const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
+  const [loadingTrend, setLoadingTrend] = useState(false);
+
+  const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!user) return;
     fetchStats();
+    fetchMuscleDistribution();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchVolumeTrend(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, range]);
+
+  const fetchVolumeTrend = useCallback(async (r: RangeKey) => {
+    if (!user) return;
+    setLoadingTrend(true);
+    try {
+      const cfg = RANGE_CONFIG[r];
+      const now = new Date();
+      const windowStart = new Date(now);
+      windowStart.setDate(windowStart.getDate() - cfg.days);
+      const prevWindowStart = new Date(now);
+      prevWindowStart.setDate(prevWindowStart.getDate() - cfg.days * 2);
+
+      const { data } = await supabase
+        .from("workout_set_logs")
+        .select("weight, reps, created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", prevWindowStart.toISOString())
+        .order("created_at", { ascending: true });
+
+      const all = data ?? [];
+      const current = all.filter((row) => new Date(row.created_at) >= windowStart);
+      const previous = all.filter((row) => new Date(row.created_at) < windowStart);
+
+      const sumVolume = (rows: { weight: number; reps: number }[]) =>
+        rows.reduce((a, row) => a + row.weight * row.reps, 0);
+      const currentTotal = sumVolume(current);
+      const previousTotal = sumVolume(previous);
+      const deltaPct = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : null;
+
+      let points: { label: string; value: number }[];
+      if (cfg.bucket === "day") {
+        const buckets: Record<string, number> = {};
+        const dayKeys: string[] = [];
+        for (let i = cfg.days - 1; i >= 0; i--) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          dayKeys.push(key);
+          buckets[key] = 0;
+        }
+        current.forEach((row) => {
+          const key = new Date(row.created_at).toISOString().slice(0, 10);
+          if (buckets[key] !== undefined) buckets[key] += row.weight * row.reps;
+        });
+        points = dayKeys.map((key) => ({
+          label: new Date(key).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
+          value: Math.round(buckets[key]),
+        }));
+      } else {
+        const buckets: Record<string, number> = {};
+        const monthKeys: string[] = [];
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = `${d.getFullYear()}-${d.getMonth()}`;
+          monthKeys.push(key);
+          buckets[key] = 0;
+        }
+        current.forEach((row) => {
+          const d = new Date(row.created_at);
+          const key = `${d.getFullYear()}-${d.getMonth()}`;
+          if (buckets[key] !== undefined) buckets[key] += row.weight * row.reps;
+        });
+        points = monthKeys.map((key) => {
+          const [y, m] = key.split("-").map(Number);
+          return { label: new Date(y, m, 1).toLocaleDateString("he-IL", { month: "short" }), value: Math.round(buckets[key]) };
+        });
+      }
+
+      setVolumeTrend({ points, total: Math.round(currentTotal), deltaPct });
+    } finally {
+      setLoadingTrend(false);
+    }
   }, [user]);
 
   const fetchStats = async () => {
@@ -127,73 +222,38 @@ const Analytics = () => {
       improvement: Math.round(improvement * 10) / 10,
       isBaseWeek,
     });
+  };
+
+  const fetchMuscleDistribution = async () => {
+    if (!user) return;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const { data: setLogs } = await supabase
       .from("workout_set_logs")
-      .select("exercise_name, weight, reps, created_at")
+      .select("exercise_name, created_at")
       .eq("user_id", user.id)
-      .gte("created_at", sevenDaysAgo.toISOString());
+      .gte("created_at", thirtyDaysAgo.toISOString());
 
     const { data: exercises } = await supabase.from("exercises").select("name, muscle_group");
     const exerciseGroupMap = new Map((exercises ?? []).map((e) => [e.name, e.muscle_group]));
 
-    const volumes: Record<string, number> = {};
+    const counts: Record<string, number> = {};
     (setLogs ?? []).forEach((log) => {
       const group = exerciseGroupMap.get(log.exercise_name) ?? "אחר";
-      volumes[group] = (volumes[group] ?? 0) + log.weight * log.reps;
+      counts[group] = (counts[group] ?? 0) + 1;
     });
 
-    setMuscleVolumes(volumes);
+    setMuscleSetCounts(counts);
   };
 
-  const fetchProgressData = async () => {
-    if (!user || loadingProgress) return;
-    setLoadingProgress(true);
-    try {
-      const { data: sessions } = await supabase
-        .from("workout_sessions")
-        .select("id, completed_at, duration_seconds, plan_name")
-        .eq("user_id", user.id)
-        .order("completed_at", { ascending: true });
-
-      const { data: setLogs } = await supabase
-        .from("workout_set_logs")
-        .select("session_id, weight, reps")
-        .eq("user_id", user.id);
-
-      if (!sessions || sessions.length === 0) {
-        setProgressData([]);
-        return;
-      }
-
-      const sessionVolumes: Record<string, number> = {};
-      (setLogs ?? []).forEach((log) => {
-        sessionVolumes[log.session_id] = (sessionVolumes[log.session_id] ?? 0) + log.weight * log.reps;
-      });
-
-        const data = sessions.map((s, i) => ({
-          date: new Date(s.completed_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-          volume: sessionVolumes[s.id as string] ?? 0,
-          workout: i + 1,
-          duration: Math.floor(s.duration_seconds / 60),
-        }));
-
-      setProgressData(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingProgress(false);
-    }
-  };
-
-  const barData = useMemo(() => {
-    return Object.entries(muscleVolumes)
-      .filter(([, v]) => v > 0)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [muscleVolumes]);
-
-  const totalVolume = useMemo(() => barData.reduce((a, d) => a + d.value, 0), [barData]);
+  const muscleBars = useMemo(() => {
+    const totalSets = Object.values(muscleSetCounts).reduce((a, v) => a + v, 0);
+    return Object.entries(muscleSetCounts)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => ({ name, pct: totalSets > 0 ? (count / totalSets) * 100 : 0 }))
+      .sort((a, b) => b.pct - a.pct);
+  }, [muscleSetCounts]);
 
   const fetchAiInsights = async () => {
     if (!user || loadingAi) return;
@@ -229,116 +289,129 @@ const Analytics = () => {
     }
   };
 
-  const handleToggleProgress = () => {
-    if (!showProgress && progressData.length === 0) {
-      fetchProgressData();
-    }
-    setShowProgress(!showProgress);
-  };
+  const rangeCfg = RANGE_CONFIG[range];
 
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      {/* Header + range tabs */}
+      <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold neon-text">PERFORMANCE ANALYTICS</h1>
+        <div className="flex gap-1.5">
+          {RANGE_TABS.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setRange(r.key)}
+              className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                range === r.key ? "bg-primary/16 text-primary" : "text-muted-foreground hover:bg-secondary/50"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Muscle Distribution - Bar Chart */}
-      <div className="glass-card p-4 mb-4">
-        <button
-          onClick={handleToggleProgress}
-          className="w-full flex items-center justify-between"
-        >
-          <h3 className="text-sm font-semibold text-foreground">התפלגות אימונים לפי שרירים</h3>
-          <MaterialIcon icon={showProgress ? "expand_less" : "expand_more"} className="text-muted-foreground text-[20px]" />
-        </button>
+      {/* Volume trend card */}
+      <div className="glass-card p-4 mb-3.5">
+        <div className="flex items-baseline justify-between mb-1">
+          <div>
+            <p className="text-[11.5px] text-muted-foreground mb-1">{rangeCfg.label}</p>
+            <p className="text-2xl font-bold tracking-tight text-foreground">
+              {volumeTrend.total.toLocaleString()} <span className="text-[13px] font-medium text-muted-foreground">ק״ג</span>
+            </p>
+          </div>
+          {volumeTrend.deltaPct !== null && (
+            <div className={`flex items-center gap-1 text-xs font-bold ${volumeTrend.deltaPct >= 0 ? "text-primary" : "text-destructive"}`}>
+              <span>{volumeTrend.deltaPct > 0 ? "+" : ""}{volumeTrend.deltaPct.toFixed(1)}%</span>
+              <MaterialIcon icon={volumeTrend.deltaPct >= 0 ? "trending_up" : "trending_down"} className="text-[14px]" />
+            </div>
+          )}
+        </div>
 
-        {barData.length > 0 ? (
-          <div className="mt-3 space-y-2">
-            {barData.map((d) => {
-              const pct = totalVolume > 0 ? (d.value / totalVolume) * 100 : 0;
-              return (
-                <div key={d.name} className="flex items-center gap-2">
-                  <span className="text-[11px] text-foreground w-16 text-right shrink-0">{d.name}</span>
-                  <div className="flex-1 h-5 bg-secondary/50 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${pct}%`,
-                        backgroundColor: MUSCLE_COLORS[d.name] || "hsl(var(--primary))",
-                      }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-muted-foreground w-10 shrink-0">{pct.toFixed(0)}%</span>
-                </div>
-              );
-            })}
+        {loadingTrend ? (
+          <div className="h-28 flex items-center justify-center">
+            <MaterialIcon icon="hourglass_top" className="text-primary text-[22px] animate-spin" />
+          </div>
+        ) : volumeTrend.points.some((p) => p.value > 0) ? (
+          <div className="h-28 mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={volumeTrend.points}>
+                <defs>
+                  <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid horizontal={true} vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 9.5, fill: "hsl(var(--muted-foreground))" }}
+                  interval="preserveStartEnd"
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis hide domain={[0, "auto"]} />
+                <Tooltip
+                  formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2.5}
+                  fill="url(#volumeFill)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         ) : (
-          <div className="text-center py-4 mt-2">
-            <MaterialIcon icon="pie_chart" className="text-muted-foreground text-[32px] mb-1" />
-            <p className="text-xs text-muted-foreground">אין נתוני אימונים ב-7 ימים אחרונים</p>
-          </div>
-        )}
-
-        {/* Expandable Progress Graph */}
-        {showProgress && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <MaterialIcon icon="show_chart" className="text-primary text-[18px]" />
-              גרף התקדמות באימונים
-            </h4>
-            {loadingProgress ? (
-              <div className="text-center py-6">
-                <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
-                <p className="text-xs text-muted-foreground mt-2">טוען נתונים...</p>
-              </div>
-            ) : progressData.length > 0 ? (
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={progressData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis
-                      tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                      width={45}
-                    />
-                    <Tooltip
-                      formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
-                      labelFormatter={(label) => `תאריך: ${label}`}
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="volume"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      dot={{ r: 3, fill: "hsl(var(--primary))" }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <MaterialIcon icon="show_chart" className="text-muted-foreground text-[32px] mb-1" />
-                <p className="text-xs text-muted-foreground">אין נתוני אימונים עדיין</p>
-              </div>
-            )}
+          <div className="text-center py-6">
+            <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
+            <p className="text-xs text-muted-foreground">אין נתוני אימונים בטווח הזה</p>
           </div>
         )}
       </div>
 
-      {/* Main Progress Card */}
-      <div className="glass-card p-4 mb-4 border-r-2 border-primary">
+      {/* Muscle group distribution */}
+      <div className="glass-card p-4 mb-3.5">
+        <h3 className="text-sm font-semibold text-foreground mb-1">התפלגות לפי קבוצת שריר</h3>
+        <p className="text-[11.5px] text-muted-foreground mb-4">30 הימים האחרונים · לפי סטים</p>
+
+        {muscleBars.length > 0 ? (
+          <div>
+            {muscleBars.map((m, i) => (
+              <div key={m.name} className="mb-3.5 last:mb-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[12.5px] font-medium text-foreground">{m.name}</span>
+                  <span className="text-xs text-muted-foreground">{m.pct.toFixed(0)}%</span>
+                </div>
+                <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${m.pct}%`, backgroundColor: rankColor(i) }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <MaterialIcon icon="pie_chart" className="text-muted-foreground text-[32px] mb-1" />
+            <p className="text-xs text-muted-foreground">אין נתוני אימונים ב-30 ימים אחרונים</p>
+          </div>
+        )}
+      </div>
+
+      {/* Weekly Improvement Card */}
+      <div className="glass-card p-4 mb-3.5 border-r-2 border-primary">
         <h3 className="text-sm font-semibold text-foreground mb-1">שיפור שבועי</h3>
         {stats.isBaseWeek ? (
           <>
@@ -364,7 +437,7 @@ const Analytics = () => {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3.5">
         <div className="glass-card p-3 border-r-2 border-primary">
           <p className="text-[10px] text-muted-foreground">אימונים (30 יום)</p>
           <p className="text-2xl font-bold text-foreground">{stats.totalWorkouts}</p>
@@ -380,7 +453,7 @@ const Analytics = () => {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <MaterialIcon icon="psychology" className="text-primary text-[20px]" />
-            <h3 className="text-sm font-semibold text-foreground">AI INSIGHTS</h3>
+            <h3 className="text-sm font-semibold text-foreground">תובנות AI</h3>
           </div>
           <button onClick={fetchAiInsights} disabled={loadingAi} className="text-xs text-primary flex items-center gap-1">
             <MaterialIcon icon={loadingAi ? "hourglass_top" : "refresh"} className={`text-[14px] ${loadingAi ? "animate-spin" : ""}`} />
