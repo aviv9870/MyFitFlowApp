@@ -79,10 +79,12 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [progressData, setProgressData] = useState<any[]>([]);
   const [muscleVolumes, setMuscleVolumes] = useState<Record<string, number>>({});
   const [loadingProgress, setLoadingProgress] = useState(false);
+  const [activeProgressIdx, setActiveProgressIdx] = useState<number | null>(null);
 
   // Weight
   const [weightData, setWeightData] = useState<{ date: string; weight: number }[]>([]);
   const [loadingWeight, setLoadingWeight] = useState(false);
+  const [activeWeightIdx, setActiveWeightIdx] = useState<number | null>(null);
 
   // Plans
   const [plans, setPlans] = useState<{ id: string; name: string; description: string | null; exerciseCount: number }[]>([]);
@@ -888,11 +890,22 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                     {progressData.length > 0 ? (
                       <div className="h-48">
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={progressData}>
+                          <LineChart
+                            data={progressData}
+                            onClick={(state) => {
+                              const idx = state?.activeTooltipIndex;
+                              if (idx == null) return;
+                              setActiveProgressIdx((prev) => (prev === idx ? null : idx));
+                            }}
+                          >
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} />
-                            <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />} />
+                            <Tooltip
+                              active={activeProgressIdx !== null}
+                              defaultIndex={activeProgressIdx ?? undefined}
+                              content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />}
+                            />
                             <Line type="monotone" dataKey="volume" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "hsl(var(--primary))" }} />
                           </LineChart>
                         </ResponsiveContainer>
@@ -961,11 +974,22 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                   </div>
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={weightData}>
+                      <LineChart
+                        data={weightData}
+                        onClick={(state) => {
+                          const idx = state?.activeTooltipIndex;
+                          if (idx == null) return;
+                          setActiveWeightIdx((prev) => (prev === idx ? null : idx));
+                        }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                         <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
-                        <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />} />
+                        <Tooltip
+                          active={activeWeightIdx !== null}
+                          defaultIndex={activeWeightIdx ?? undefined}
+                          content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />}
+                        />
                         <Line type="monotone" dataKey="weight" stroke="#4ECDC4" strokeWidth={2} dot={{ r: 3, fill: "#4ECDC4" }} />
                       </LineChart>
                     </ResponsiveContainer>

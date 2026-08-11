@@ -17,6 +17,7 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
   const [logs, setLogs] = useState<WeightLog[]>([]);
   const [newWeight, setNewWeight] = useState("");
   const [saving, setSaving] = useState(false);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -128,7 +129,14 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
         {graphData.length >= 2 ? (
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={graphData}>
+              <LineChart
+                data={graphData}
+                onClick={(state) => {
+                  const idx = state?.activeTooltipIndex;
+                  if (idx == null) return;
+                  setActiveIdx((prev) => (prev === idx ? null : idx));
+                }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="date"
@@ -140,7 +148,11 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
                   width={40}
                   domain={["auto", "auto"]}
                 />
-                <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />} />
+                <Tooltip
+                  active={activeIdx !== null}
+                  defaultIndex={activeIdx ?? undefined}
+                  content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />}
+                />
                 <Line
                   type="monotone"
                   dataKey="value"

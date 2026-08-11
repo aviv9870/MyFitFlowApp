@@ -86,6 +86,7 @@ const Analytics = () => {
   const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [showTrendChart, setShowTrendChart] = useState(false);
+  const [activeTrendIdx, setActiveTrendIdx] = useState<number | null>(null);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
   const [muscleWeeklySetCounts, setMuscleWeeklySetCounts] = useState<Record<string, number>>({});
@@ -427,7 +428,7 @@ const Analytics = () => {
               {RANGE_TABS.map((r) => (
                 <button
                   key={r.key}
-                  onClick={() => setRange(r.key)}
+                  onClick={() => { setRange(r.key); setActiveTrendIdx(null); }}
                   className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
                     range === r.key ? "bg-primary/16 text-primary" : "text-muted-foreground hover:bg-secondary/50"
                   }`}
@@ -459,7 +460,14 @@ const Analytics = () => {
             ) : volumeTrend.points.some((p) => p.value > 0) ? (
               <div className="h-28 mt-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={volumeTrend.points}>
+                  <AreaChart
+                    data={volumeTrend.points}
+                    onClick={(state) => {
+                      const idx = state?.activeTooltipIndex;
+                      if (idx == null) return;
+                      setActiveTrendIdx((prev) => (prev === idx ? null : idx));
+                    }}
+                  >
                     <defs>
                       <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
@@ -475,7 +483,11 @@ const Analytics = () => {
                       tickLine={false}
                     />
                     <YAxis hide domain={[0, "auto"]} />
-                    <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />} />
+                    <Tooltip
+                      active={activeTrendIdx !== null}
+                      defaultIndex={activeTrendIdx ?? undefined}
+                      content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />}
+                    />
                     <Area
                       type="monotone"
                       dataKey="value"

@@ -42,6 +42,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [graphField, setGraphField] = useState<string>("weight");
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [loadingAi, setLoadingAi] = useState(false);
 
@@ -233,7 +234,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
               {fields.map((f) => (
                 <button
                   key={f.key}
-                  onClick={() => setGraphField(f.key)}
+                  onClick={() => { setGraphField(f.key); setActiveIdx(null); }}
                   className={`text-[10px] px-2 py-1 rounded-full transition-all ${
                     graphField === f.key
                       ? "bg-primary text-primary-foreground"
@@ -248,7 +249,14 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
             {graphData.length >= 2 ? (
               <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={graphData}>
+                  <LineChart
+                    data={graphData}
+                    onClick={(state) => {
+                      const idx = state?.activeTooltipIndex;
+                      if (idx == null) return;
+                      setActiveIdx((prev) => (prev === idx ? null : idx));
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis
                       dataKey="date"
@@ -260,7 +268,11 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
                       width={40}
                       domain={["auto", "auto"]}
                     />
-                    <Tooltip trigger="click" content={<ChartTooltip unit={selectedField?.unit} valueLabel={selectedField?.label} />} />
+                    <Tooltip
+                      active={activeIdx !== null}
+                      defaultIndex={activeIdx ?? undefined}
+                      content={<ChartTooltip unit={selectedField?.unit} valueLabel={selectedField?.label} />}
+                    />
                     <Line
                       type="monotone"
                       dataKey="value"
