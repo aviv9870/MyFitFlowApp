@@ -892,6 +892,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                             <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} />
                             <Tooltip
+                              trigger="click"
                               formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
                               contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
                             />
@@ -968,6 +969,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                         <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                         <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
                         <Tooltip
+                          trigger="click"
                           formatter={(value: number) => [`${value} ק״ג`, "משקל"]}
                           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
                         />

@@ -260,6 +260,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
                       domain={["auto", "auto"]}
                     />
                     <Tooltip
+                      trigger="click"
                       formatter={(value: number) => [`${value} ${selectedField?.unit}`, selectedField?.label]}
                       contentStyle={{
                         background: "hsl(var(--card))",

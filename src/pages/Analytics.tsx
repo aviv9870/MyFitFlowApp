@@ -20,11 +20,35 @@ const RANGE_CONFIG: Record<RangeKey, { days: number; label: string; bucket: "day
   year: { days: 365, label: "נפח אימון שנתי", bucket: "month" },
 };
 
-// Bars are always sorted by rank (highest share first) and colored by a
-// stepped-down intensity of the theme's primary color, so color itself
-// communicates rank instead of an arbitrary per-muscle color map.
-const RANK_OPACITIES = [1, 0.8, 0.62, 0.48, 0.36, 0.26];
-const rankColor = (i: number) => `hsl(var(--primary) / ${RANK_OPACITIES[Math.min(i, RANK_OPACITIES.length - 1)]})`;
+// The exercises table has muscle_group values seeded in both English and
+// Hebrew for the same muscle (e.g. "Shoulders" and "כתפיים" both exist) -
+// normalize everything to a single canonical Hebrew name so the same
+// muscle doesn't get split into two separate bars in the distribution.
+const MUSCLE_GROUP_ALIASES: Record<string, string> = {
+  Back: "גב",
+  Biceps: "יד קדמית",
+  Chest: "חזה",
+  Core: "בטן",
+  Legs: "רגליים",
+  Shoulders: "כתפיים",
+  Triceps: "יד אחורית",
+};
+const canonicalMuscleGroup = (raw: string) => MUSCLE_GROUP_ALIASES[raw] ?? raw;
+
+// Distinct, fixed color per muscle (not a rank-based intensity scale) so
+// each muscle keeps a consistent, easily-distinguishable color regardless
+// of its current rank in the list.
+const MUSCLE_COLORS: Record<string, string> = {
+  "חזה": "#FF6B6B",
+  "גב": "#4ECDC4",
+  "כתפיים": "#5B9EE8",
+  "רגליים": "#8FD08A",
+  "יד קדמית": "#F4C95D",
+  "יד אחורית": "#C58AF2",
+  "בטן": "#FF9F5B",
+  "אחר": "hsl(var(--muted-foreground))",
+};
+const muscleColor = (name: string) => MUSCLE_COLORS[name] ?? "hsl(var(--primary))";
 
 interface VolumeTrend {
   points: { label: string; value: number }[];
@@ -43,8 +67,11 @@ const Analytics = () => {
   const [range, setRange] = useState<RangeKey>("week");
   const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
   const [loadingTrend, setLoadingTrend] = useState(false);
+  const [showTrendChart, setShowTrendChart] = useState(false);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
+  const [muscleWeeklySetCounts, setMuscleWeeklySetCounts] = useState<Record<string, number>>({});
+  const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -54,10 +81,10 @@ const Analytics = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !showTrendChart) return;
     fetchVolumeTrend(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, range]);
+  }, [user, range, showTrendChart]);
 
   const fetchVolumeTrend = useCallback(async (r: RangeKey) => {
     if (!user) return;
@@ -228,6 +255,8 @@ const Analytics = () => {
     if (!user) return;
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const { data: setLogs } = await supabase
       .from("workout_set_logs")
@@ -236,24 +265,35 @@ const Analytics = () => {
       .gte("created_at", thirtyDaysAgo.toISOString());
 
     const { data: exercises } = await supabase.from("exercises").select("name, muscle_group");
-    const exerciseGroupMap = new Map((exercises ?? []).map((e) => [e.name, e.muscle_group]));
+    const exerciseGroupMap = new Map(
+      (exercises ?? []).map((e) => [e.name, canonicalMuscleGroup(e.muscle_group ?? "אחר")])
+    );
 
     const counts: Record<string, number> = {};
+    const weeklyCounts: Record<string, number> = {};
     (setLogs ?? []).forEach((log) => {
       const group = exerciseGroupMap.get(log.exercise_name) ?? "אחר";
       counts[group] = (counts[group] ?? 0) + 1;
+      if (new Date(log.created_at) >= sevenDaysAgo) {
+        weeklyCounts[group] = (weeklyCounts[group] ?? 0) + 1;
+      }
     });
 
     setMuscleSetCounts(counts);
+    setMuscleWeeklySetCounts(weeklyCounts);
   };
 
   const muscleBars = useMemo(() => {
     const totalSets = Object.values(muscleSetCounts).reduce((a, v) => a + v, 0);
     return Object.entries(muscleSetCounts)
       .filter(([, count]) => count > 0)
-      .map(([name, count]) => ({ name, pct: totalSets > 0 ? (count / totalSets) * 100 : 0 }))
+      .map(([name, count]) => ({
+        name,
+        pct: totalSets > 0 ? (count / totalSets) * 100 : 0,
+        weeklySets: muscleWeeklySetCounts[name] ?? 0,
+      }))
       .sort((a, b) => b.pct - a.pct);
-  }, [muscleSetCounts]);
+  }, [muscleSetCounts, muscleWeeklySetCounts]);
 
   const fetchAiInsights = async () => {
     if (!user || loadingAi) return;
@@ -293,119 +333,146 @@ const Analytics = () => {
 
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
-      {/* Header + range tabs */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold neon-text">PERFORMANCE ANALYTICS</h1>
-        <div className="flex gap-1.5">
-          {RANGE_TABS.map((r) => (
-            <button
-              key={r.key}
-              onClick={() => setRange(r.key)}
-              className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                range === r.key ? "bg-primary/16 text-primary" : "text-muted-foreground hover:bg-secondary/50"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* Volume trend card */}
+      {/* Muscle group distribution, with the volume trend chart tucked behind an expand toggle */}
       <div className="glass-card p-4 mb-3.5">
-        <div className="flex items-baseline justify-between mb-1">
-          <div>
-            <p className="text-[11.5px] text-muted-foreground mb-1">{rangeCfg.label}</p>
-            <p className="text-2xl font-bold tracking-tight text-foreground">
-              {volumeTrend.total.toLocaleString()} <span className="text-[13px] font-medium text-muted-foreground">ק״ג</span>
-            </p>
-          </div>
-          {volumeTrend.deltaPct !== null && (
-            <div className={`flex items-center gap-1 text-xs font-bold ${volumeTrend.deltaPct >= 0 ? "text-primary" : "text-destructive"}`}>
-              <span>{volumeTrend.deltaPct > 0 ? "+" : ""}{volumeTrend.deltaPct.toFixed(1)}%</span>
-              <MaterialIcon icon={volumeTrend.deltaPct >= 0 ? "trending_up" : "trending_down"} className="text-[14px]" />
-            </div>
-          )}
-        </div>
-
-        {loadingTrend ? (
-          <div className="h-28 flex items-center justify-center">
-            <MaterialIcon icon="hourglass_top" className="text-primary text-[22px] animate-spin" />
-          </div>
-        ) : volumeTrend.points.some((p) => p.value > 0) ? (
-          <div className="h-28 mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={volumeTrend.points}>
-                <defs>
-                  <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid horizontal={true} vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 9.5, fill: "hsl(var(--muted-foreground))" }}
-                  interval="preserveStartEnd"
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis hide domain={[0, "auto"]} />
-                <Tooltip
-                  formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2.5}
-                  fill="url(#volumeFill)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="text-center py-6">
-            <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
-            <p className="text-xs text-muted-foreground">אין נתוני אימונים בטווח הזה</p>
-          </div>
-        )}
-      </div>
-
-      {/* Muscle group distribution */}
-      <div className="glass-card p-4 mb-3.5">
-        <h3 className="text-sm font-semibold text-foreground mb-1">התפלגות לפי קבוצת שריר</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-1">התפלגות אימונים לפי שרירים</h3>
         <p className="text-[11.5px] text-muted-foreground mb-4">30 הימים האחרונים · לפי סטים</p>
 
         {muscleBars.length > 0 ? (
           <div>
-            {muscleBars.map((m, i) => (
-              <div key={m.name} className="mb-3.5 last:mb-0">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12.5px] font-medium text-foreground">{m.name}</span>
-                  <span className="text-xs text-muted-foreground">{m.pct.toFixed(0)}%</span>
-                </div>
-                <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${m.pct}%`, backgroundColor: rankColor(i) }}
-                  />
-                </div>
-              </div>
-            ))}
+            {muscleBars.map((m) => {
+              const isExpanded = expandedMuscle === m.name;
+              return (
+                <button
+                  key={m.name}
+                  onClick={() => setExpandedMuscle(isExpanded ? null : m.name)}
+                  className="w-full text-right mb-3.5 last:mb-0"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[12.5px] font-medium text-foreground">{m.name}</span>
+                    <span className="text-xs text-muted-foreground">{m.pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${m.pct}%`, backgroundColor: muscleColor(m.name) }}
+                    />
+                  </div>
+                  {isExpanded && (
+                    <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                      <MaterialIcon icon="event_repeat" className="text-[13px]" />
+                      {m.weeklySets} סטים השבוע
+                    </p>
+                  )}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-4">
             <MaterialIcon icon="pie_chart" className="text-muted-foreground text-[32px] mb-1" />
             <p className="text-xs text-muted-foreground">אין נתוני אימונים ב-30 ימים אחרונים</p>
+          </div>
+        )}
+
+        {/* Expand to reveal the volume trend chart */}
+        <button
+          onClick={() => setShowTrendChart(!showTrendChart)}
+          className="w-full flex items-center justify-between mt-4 pt-3.5 border-t border-border"
+        >
+          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+            <MaterialIcon icon="show_chart" className="text-primary text-[16px]" />
+            גרף מגמת נפח אימונים
+          </span>
+          <MaterialIcon icon={showTrendChart ? "expand_less" : "expand_more"} className="text-muted-foreground text-[20px]" />
+        </button>
+
+        {showTrendChart && (
+          <div className="mt-3.5">
+            <div className="flex gap-1.5 mb-3">
+              {RANGE_TABS.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                    range === r.key ? "bg-primary/16 text-primary" : "text-muted-foreground hover:bg-secondary/50"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-baseline justify-between mb-1">
+              <div>
+                <p className="text-[11.5px] text-muted-foreground mb-1">{rangeCfg.label}</p>
+                <p className="text-2xl font-bold tracking-tight text-foreground">
+                  {volumeTrend.total.toLocaleString()} <span className="text-[13px] font-medium text-muted-foreground">ק״ג</span>
+                </p>
+              </div>
+              {volumeTrend.deltaPct !== null && (
+                <div className={`flex items-center gap-1 text-xs font-bold ${volumeTrend.deltaPct >= 0 ? "text-primary" : "text-destructive"}`}>
+                  <span>{volumeTrend.deltaPct > 0 ? "+" : ""}{volumeTrend.deltaPct.toFixed(1)}%</span>
+                  <MaterialIcon icon={volumeTrend.deltaPct >= 0 ? "trending_up" : "trending_down"} className="text-[14px]" />
+                </div>
+              )}
+            </div>
+
+            {loadingTrend ? (
+              <div className="h-28 flex items-center justify-center">
+                <MaterialIcon icon="hourglass_top" className="text-primary text-[22px] animate-spin" />
+              </div>
+            ) : volumeTrend.points.some((p) => p.value > 0) ? (
+              <div className="h-28 mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={volumeTrend.points}>
+                    <defs>
+                      <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid horizontal={true} vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.4} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 9.5, fill: "hsl(var(--muted-foreground))" }}
+                      interval="preserveStartEnd"
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis hide domain={[0, "auto"]} />
+                    <Tooltip
+                      trigger="click"
+                      formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2.5}
+                      fill="url(#volumeFill)"
+                      dot={false}
+                      activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="text-center py-6">
+                <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
+                <p className="text-xs text-muted-foreground">אין נתוני אימונים בטווח הזה</p>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -140,6 +140,7 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
                   domain={["auto", "auto"]}
                 />
                 <Tooltip
+                  trigger="click"
                   formatter={(value: number) => [`${value} ק״ג`, "משקל"]}
                   contentStyle={{
                     background: "hsl(var(--card))",
