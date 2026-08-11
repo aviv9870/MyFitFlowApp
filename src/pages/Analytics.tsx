@@ -37,18 +37,35 @@ const canonicalMuscleGroup = (raw: string) => MUSCLE_GROUP_ALIASES[raw] ?? raw;
 
 // Distinct, fixed color per muscle (not a rank-based intensity scale) so
 // each muscle keeps a consistent, easily-distinguishable color regardless
-// of its current rank in the list.
+// of its current rank in the list. No yellow, by request.
 const MUSCLE_COLORS: Record<string, string> = {
   "חזה": "#FF6B6B",
   "גב": "#4ECDC4",
   "כתפיים": "#5B9EE8",
   "רגליים": "#8FD08A",
-  "יד קדמית": "#F4C95D",
-  "יד אחורית": "#C58AF2",
+  "יד קדמית": "#C58AF2",
+  "יד אחורית": "#F2789A",
   "בטן": "#FF9F5B",
   "אחר": "hsl(var(--muted-foreground))",
 };
 const muscleColor = (name: string) => MUSCLE_COLORS[name] ?? "hsl(var(--primary))";
+
+// Indirect (synergist) credit can produce values like 3.5 - round to the
+// nearest half-set and drop the trailing .0 for whole numbers.
+const formatSets = (n: number) => {
+  const rounded = Math.round(n * 2) / 2;
+  return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
+};
+
+// Compound exercises also load secondary muscles besides their primary
+// muscle_group - credit those as partial ("indirect") sets so the
+// distribution reflects real training load, not just the primary target.
+const SYNERGIST_MAP: Record<string, { muscle: string; factor: number }[]> = {
+  "חזה": [{ muscle: "יד אחורית", factor: 0.5 }],
+  "גב": [{ muscle: "יד קדמית", factor: 0.5 }],
+  "כתפיים": [{ muscle: "יד אחורית", factor: 0.5 }],
+  "רגליים": [{ muscle: "בטן", factor: 0.25 }],
+};
 
 interface VolumeTrend {
   points: { label: string; value: number }[];
@@ -255,8 +272,13 @@ const Analytics = () => {
     if (!user) return;
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // "This week" = the current calendar week, Sunday through Saturday
+    // (matches the week-start convention already used on the Dashboard),
+    // not a rolling last-7-days window.
+    const startOfWeek = new Date();
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
 
     const { data: setLogs } = await supabase
       .from("workout_set_logs")
@@ -269,13 +291,20 @@ const Analytics = () => {
       (exercises ?? []).map((e) => [e.name, canonicalMuscleGroup(e.muscle_group ?? "אחר")])
     );
 
+    const addCredit = (target: Record<string, number>, group: string, amount: number) => {
+      target[group] = (target[group] ?? 0) + amount;
+      SYNERGIST_MAP[group]?.forEach(({ muscle, factor }) => {
+        target[muscle] = (target[muscle] ?? 0) + amount * factor;
+      });
+    };
+
     const counts: Record<string, number> = {};
     const weeklyCounts: Record<string, number> = {};
     (setLogs ?? []).forEach((log) => {
       const group = exerciseGroupMap.get(log.exercise_name) ?? "אחר";
-      counts[group] = (counts[group] ?? 0) + 1;
-      if (new Date(log.created_at) >= sevenDaysAgo) {
-        weeklyCounts[group] = (weeklyCounts[group] ?? 0) + 1;
+      addCredit(counts, group, 1);
+      if (new Date(log.created_at) >= startOfWeek) {
+        addCredit(weeklyCounts, group, 1);
       }
     });
 
@@ -365,7 +394,7 @@ const Analytics = () => {
                   {isExpanded && (
                     <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
                       <MaterialIcon icon="event_repeat" className="text-[13px]" />
-                      {m.weeklySets} סטים השבוע
+                      {formatSets(m.weeklySets)} סטים השבוע
                     </p>
                   )}
                 </button>
