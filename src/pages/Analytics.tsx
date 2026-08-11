@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import ChartTooltip from "@/components/ChartTooltip";
 import { toast } from "sonner";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useGender } from "@/hooks/useGender";
@@ -474,16 +475,7 @@ const Analytics = () => {
                       tickLine={false}
                     />
                     <YAxis hide domain={[0, "auto"]} />
-                    <Tooltip
-                      trigger="click"
-                      formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
+                    <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />} />
                     <Area
                       type="monotone"
                       dataKey="value"

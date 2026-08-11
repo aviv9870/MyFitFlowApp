@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import ChartTooltip from "@/components/ChartTooltip";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 
@@ -139,16 +140,7 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
                   width={40}
                   domain={["auto", "auto"]}
                 />
-                <Tooltip
-                  trigger="click"
-                  formatter={(value: number) => [`${value} ק״ג`, "משקל"]}
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
-                />
+                <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />} />
                 <Line
                   type="monotone"
                   dataKey="value"

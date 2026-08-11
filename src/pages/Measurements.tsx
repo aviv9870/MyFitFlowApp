@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import ChartTooltip from "@/components/ChartTooltip";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useGender } from "@/hooks/useGender";
@@ -259,16 +260,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
                       width={40}
                       domain={["auto", "auto"]}
                     />
-                    <Tooltip
-                      trigger="click"
-                      formatter={(value: number) => [`${value} ${selectedField?.unit}`, selectedField?.label]}
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
+                    <Tooltip trigger="click" content={<ChartTooltip unit={selectedField?.unit} valueLabel={selectedField?.label} />} />
                     <Line
                       type="monotone"
                       dataKey="value"

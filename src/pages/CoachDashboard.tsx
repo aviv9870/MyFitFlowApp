@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import ChartTooltip from "@/components/ChartTooltip";
 import WorkoutSummaryModal from "@/components/WorkoutSummaryModal";
 import PlanEditor from "@/components/PlanEditor";
 import { toast } from "sonner";
@@ -891,11 +892,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} />
-                            <Tooltip
-                              trigger="click"
-                              formatter={(value: number) => [`${value.toLocaleString()} ק״ג`, "נפח"]}
-                              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
-                            />
+                            <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />} />
                             <Line type="monotone" dataKey="volume" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "hsl(var(--primary))" }} />
                           </LineChart>
                         </ResponsiveContainer>
@@ -968,11 +965,7 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval="preserveStartEnd" />
                         <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
-                        <Tooltip
-                          trigger="click"
-                          formatter={(value: number) => [`${value} ק״ג`, "משקל"]}
-                          contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
-                        />
+                        <Tooltip trigger="click" content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />} />
                         <Line type="monotone" dataKey="weight" stroke="#4ECDC4" strokeWidth={2} dot={{ r: 3, fill: "#4ECDC4" }} />
                       </LineChart>
                     </ResponsiveContainer>
