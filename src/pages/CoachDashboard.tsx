@@ -104,6 +104,8 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [traineeSearch, setTraineeSearch] = useState("");
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [removingTrainee, setRemovingTrainee] = useState(false);
+  const [confirmUnlinkId, setConfirmUnlinkId] = useState<string | null>(null);
+  const [unlinkingTrainee, setUnlinkingTrainee] = useState(false);
 
   // AI
   const [aiQuestion, setAiQuestion] = useState("");
@@ -224,6 +226,26 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  // Removes the coach's access to a trainee without banning their account -
+  // the trainee keeps using the app on their own, just disconnected from
+  // this coach. Relies on the "coach_permissions_delete_by_coach" RLS policy.
+  const unlinkTrainee = async (trainee: Trainee) => {
+    if (unlinkingTrainee) return;
+    setUnlinkingTrainee(true);
+    try {
+      const { error } = await supabase.from("coach_permissions").delete().eq("id", trainee.permission_id);
+      if (error) throw error;
+      setTrainees((prev) => prev.filter((t) => t.permission_id !== trainee.permission_id));
+      toast.success("הגישה למתאמן הוסרה");
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בהסרת הגישה");
+    } finally {
+      setUnlinkingTrainee(false);
+      setConfirmUnlinkId(null);
+    }
+  };
+
   const filteredTrainees = useMemo(
     () => trainees.filter((t) => (t.display_name ?? "").includes(traineeSearch.trim())),
     [trainees, traineeSearch]
@@ -266,20 +288,26 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
 
   const fetchSessions = async (traineeId: string) => {
     setLoadingSessions(true);
-    if (traineeId === MOCK_TRAINEE_ID) {
-      const mock = getMockSessions(traineeId).sort((a, b) => b.completed_at.localeCompare(a.completed_at));
-      setSessions(mock);
+    try {
+      if (traineeId === MOCK_TRAINEE_ID) {
+        const mock = getMockSessions(traineeId).sort((a, b) => b.completed_at.localeCompare(a.completed_at));
+        setSessions(mock);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("workout_sessions")
+        .select("id, plan_name, duration_seconds, completed_at")
+        .eq("user_id", traineeId)
+        .order("completed_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setSessions(data ?? []);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת היסטוריית האימונים");
+    } finally {
       setLoadingSessions(false);
-      return;
     }
-    const { data } = await supabase
-      .from("workout_sessions")
-      .select("id, plan_name, duration_seconds, completed_at")
-      .eq("user_id", traineeId)
-      .order("completed_at", { ascending: false })
-      .limit(50);
-    setSessions(data ?? []);
-    setLoadingSessions(false);
   };
 
   const fetchProgress = async (traineeId: string) => {
@@ -321,50 +349,78 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
 
   const fetchWeight = async (traineeId: string) => {
     setLoadingWeight(true);
-    const data =
-      traineeId === MOCK_TRAINEE_ID
-        ? getMockWeightLogs(traineeId).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-        : (await supabase.from("body_weight_logs").select("weight, logged_at").eq("user_id", traineeId).order("logged_at", { ascending: true })).data;
-    setWeightData(
-      (data ?? []).map((d) => ({
-        date: new Date(d.logged_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-        weight: d.weight,
-      }))
-    );
-    setLoadingWeight(false);
+    try {
+      let data;
+      if (traineeId === MOCK_TRAINEE_ID) {
+        data = getMockWeightLogs(traineeId).sort((a, b) => a.logged_at.localeCompare(b.logged_at));
+      } else {
+        const { data: rows, error } = await supabase
+          .from("body_weight_logs")
+          .select("weight, logged_at")
+          .eq("user_id", traineeId)
+          .order("logged_at", { ascending: true });
+        if (error) throw error;
+        data = rows;
+      }
+      setWeightData(
+        (data ?? []).map((d) => ({
+          date: new Date(d.logged_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
+          weight: d.weight,
+        }))
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת נתוני משקל");
+    } finally {
+      setLoadingWeight(false);
+    }
   };
 
   const fetchPlans = async (traineeId: string) => {
     setLoadingPlans(true);
-    const { data: plansData } = await supabase
-      .from("workout_plans")
-      .select("id, name, description")
-      .eq("user_id", traineeId)
-      .order("created_at", { ascending: false });
+    try {
+      const { data: plansData, error } = await supabase
+        .from("workout_plans")
+        .select("id, name, description")
+        .eq("user_id", traineeId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
 
-    if (plansData) {
-      const plansList = [];
-      for (const p of plansData) {
-        const { count } = await supabase
-          .from("workout_plan_exercises")
-          .select("*", { count: "exact", head: true })
-          .eq("plan_id", p.id);
-        plansList.push({ ...p, exerciseCount: count ?? 0 });
+      if (plansData) {
+        const plansList = [];
+        for (const p of plansData) {
+          const { count } = await supabase
+            .from("workout_plan_exercises")
+            .select("*", { count: "exact", head: true })
+            .eq("plan_id", p.id);
+          plansList.push({ ...p, exerciseCount: count ?? 0 });
+        }
+        setPlans(plansList);
       }
-      setPlans(plansList);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת תוכניות האימון");
+    } finally {
+      setLoadingPlans(false);
     }
-    setLoadingPlans(false);
   };
 
   const fetchPendingExercises = async (traineeId: string) => {
     setLoadingExercises(true);
-    const { data } = await supabase
-      .from("exercises")
-      .select("id, name, muscle_group")
-      .eq("submitted_by", traineeId)
-      .eq("status", "pending");
-    setPendingExercises(data ?? []);
-    setLoadingExercises(false);
+    try {
+      const { data, error } = await supabase
+        .from("exercises")
+        .select("id, name, muscle_group")
+        .eq("submitted_by", traineeId)
+        .eq("status", "pending");
+      if (error) throw error;
+      setPendingExercises(data ?? []);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת תרגילים לאישור");
+    } finally {
+      setLoadingExercises(false);
+    }
   };
 
   const reviewExercise = async (exerciseId: string, decision: "approved" | "rejected") => {
@@ -758,6 +814,27 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                         </button>
                       </div>
                     </div>
+                  ) : confirmUnlinkId === t.permission_id ? (
+                    <div key={t.trainee_id} className="glass-card p-4 border border-border space-y-2">
+                      <p className="text-sm font-bold text-foreground">להסיר את {t.display_name} מרשימת המתאמנים שלך?</p>
+                      <p className="text-[10px] text-muted-foreground">החשבון שלו לא ייחסם - הוא ימשיך להשתמש באפליקציה בעצמו, רק לא יהיה מקושר אליך יותר.</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => unlinkTrainee(t)}
+                          disabled={unlinkingTrainee}
+                          className="flex-1 bg-secondary text-secondary-foreground py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                          {unlinkingTrainee ? "מסיר..." : "כן, הסר גישה"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmUnlinkId(null)}
+                          disabled={unlinkingTrainee}
+                          className="px-3 bg-secondary/50 text-muted-foreground rounded-lg text-xs font-bold"
+                        >
+                          ביטול
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <div
                       key={t.trainee_id}
@@ -775,6 +852,13 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                             : "עדיין לא התאמן"}
                         </p>
                       </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmUnlinkId(t.permission_id); }}
+                        className="p-1.5 rounded-lg hover:bg-secondary/70 text-muted-foreground hover:text-foreground"
+                        title="הסר גישה בלבד (ללא חסימה)"
+                      >
+                        <MaterialIcon icon="link_off" className="text-[18px]" />
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(t.permission_id); }}
                         className="p-1.5 rounded-lg hover:bg-destructive/15 text-muted-foreground hover:text-destructive"
@@ -839,6 +923,16 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
           {/* History tab */}
           {activeTab === "history" && (
             <>
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => fetchSessions(selectedTrainee.trainee_id)}
+                  disabled={loadingSessions}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  <MaterialIcon icon="refresh" className={`text-[14px] ${loadingSessions ? "animate-spin" : ""}`} />
+                  רענן
+                </button>
+              </div>
               {loadingSessions ? (
                 <p className="text-center text-muted-foreground text-sm mt-10">טוען אימונים...</p>
               ) : sessions.length === 0 ? (
@@ -874,6 +968,16 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
           {/* Progress tab */}
           {activeTab === "progress" && (
             <div className="space-y-4">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => fetchProgress(selectedTrainee.trainee_id)}
+                  disabled={loadingProgress}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  <MaterialIcon icon="refresh" className={`text-[14px] ${loadingProgress ? "animate-spin" : ""}`} />
+                  רענן
+                </button>
+              </div>
               {loadingProgress ? (
                 <div className="text-center mt-10">
                   <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
@@ -948,10 +1052,20 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
           {/* Weight tab */}
           {activeTab === "weight" && (
             <div className="glass-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <MaterialIcon icon="monitor_weight" className="text-primary text-[18px]" />
-                גרף משקל גוף
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <MaterialIcon icon="monitor_weight" className="text-primary text-[18px]" />
+                  גרף משקל גוף
+                </h3>
+                <button
+                  onClick={() => fetchWeight(selectedTrainee.trainee_id)}
+                  disabled={loadingWeight}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  <MaterialIcon icon="refresh" className={`text-[14px] ${loadingWeight ? "animate-spin" : ""}`} />
+                  רענן
+                </button>
+              </div>
               {loadingWeight ? (
                 <div className="text-center py-6">
                   <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
@@ -1033,6 +1147,17 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                     <span className="text-sm font-bold text-foreground">צור תוכנית למתאמן</span>
                   </button>
 
+                  <div className="flex justify-end mb-2">
+                    <button
+                      onClick={() => fetchPlans(selectedTrainee!.trainee_id)}
+                      disabled={loadingPlans}
+                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    >
+                      <MaterialIcon icon="refresh" className={`text-[14px] ${loadingPlans ? "animate-spin" : ""}`} />
+                      רענן
+                    </button>
+                  </div>
+
                   {loadingPlans ? (
                     <div className="text-center mt-10">
                       <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
@@ -1103,6 +1228,16 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
           {/* Exercise approval tab */}
           {activeTab === "exercises" && (
             <div>
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => fetchPendingExercises(selectedTrainee.trainee_id)}
+                  disabled={loadingExercises}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  <MaterialIcon icon="refresh" className={`text-[14px] ${loadingExercises ? "animate-spin" : ""}`} />
+                  רענן
+                </button>
+              </div>
               {loadingExercises ? (
                 <div className="text-center mt-10">
                   <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />

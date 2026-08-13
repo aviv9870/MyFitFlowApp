@@ -53,7 +53,7 @@ serve(async (req) => {
 
     const { error: permError } = await adminClient.from("coach_permissions").insert({
       trainee_id: traineeId,
-      coach_email: ADMIN_EMAIL,
+      coach_email: caller.email,
     });
     if (permError) throw permError;
 

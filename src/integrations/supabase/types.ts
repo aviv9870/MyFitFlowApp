@@ -523,6 +523,10 @@ export type Database = {
         Returns: boolean
       }
       current_user_email: { Args: never; Returns: string }
+      replace_plan_exercises: {
+        Args: { p_plan_id: string; p_rows: Json }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

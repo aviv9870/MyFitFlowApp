@@ -188,7 +188,6 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
       let planId = plan?.id;
       if (planId) {
         await supabase.from("workout_plans").update({ name, description }).eq("id", planId);
-        await supabase.from("workout_plan_exercises").delete().eq("plan_id", planId);
       } else {
         const { data, error } = await supabase
           .from("workout_plans")
@@ -200,17 +199,19 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
       }
 
       const rows = planExercises.map((pe, i) => ({
-        plan_id: planId!,
         exercise_id: pe.exercise_id,
         target_sets: pe.target_sets,
         rest_seconds: pe.rest_seconds,
         order_index: i,
-        group_id: pe.group_id,
-        group_type: pe.group_type,
-        notes: pe.notes || null,
+        group_id: pe.group_id ?? "",
+        group_type: pe.group_type ?? "",
+        notes: pe.notes || "",
       }));
-      const { error: insertErr } = await supabase.from("workout_plan_exercises").insert(rows);
-      if (insertErr) throw insertErr;
+      // Atomic swap (DB-side transaction) instead of a client-side
+      // delete-then-insert, which would leave the plan with zero
+      // exercises if the insert failed after the delete succeeded.
+      const { error: swapErr } = await supabase.rpc("replace_plan_exercises", { p_plan_id: planId, p_rows: rows });
+      if (swapErr) throw swapErr;
 
       const extras: Record<string, PlanExerciseExtras> = {};
       planExercises.forEach((pe) => {
