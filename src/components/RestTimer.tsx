@@ -29,7 +29,19 @@ const RestTimer = ({ seconds, endAt, onDone, progressMessage }: Props) => {
 
     tick();
     const interval = setInterval(tick, 250);
-    return () => clearInterval(interval);
+
+    // Backgrounded tabs throttle/suspend setInterval, so a timer that
+    // finishes while the app is in the background can miss its vibrate -
+    // re-run tick() the moment the app becomes visible again to catch up.
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [endAt, onDone]);
 
   const pct = ((seconds - remaining) / seconds) * 100;

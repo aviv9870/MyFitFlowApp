@@ -5,8 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GEMINI_MODEL = "gemini-2.0-flash";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GEMINI_MODEL = "gemini-3.6-flash";
+const GROQ_MODEL = "openai/gpt-oss-120b";
 const CEREBRAS_MODEL = "gpt-oss-120b";
 
 // Groq and Cerebras both expose an OpenAI-compatible chat/completions API

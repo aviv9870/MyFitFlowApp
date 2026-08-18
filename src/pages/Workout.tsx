@@ -10,6 +10,16 @@ import ExerciseHistory from "@/components/ExerciseHistory";
 import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
 import { getPlanExerciseExtras } from "@/services/workoutExtrasLocal";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface WorkoutSet {
   weight: number;
@@ -94,6 +104,7 @@ const Workout = () => {
   const [editPlan, setEditPlan] = useState<PlanData | null>(null);
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
   const [historyExercise, setHistoryExercise] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   // Tracks the order in which exercises were first completed (first set locked)
   const [completionOrder, setCompletionOrder] = useState<string[]>([]);
 
@@ -742,7 +753,7 @@ const Workout = () => {
 
         <div className="flex gap-3 mt-6">
           <button
-            onClick={cancelWorkout}
+            onClick={() => setShowCancelConfirm(true)}
             className="flex-1 bg-secondary text-secondary-foreground py-3 rounded-xl font-bold text-sm"
           >
             בטל
@@ -755,6 +766,21 @@ const Workout = () => {
             סיים אימון
           </button>
         </div>
+
+        <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>לבטל את האימון?</AlertDialogTitle>
+              <AlertDialogDescription>
+                כל הסטים שביצעת באימון הזה יימחקו ולא ניתן יהיה לשחזר אותם.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>המשך אימון</AlertDialogCancel>
+              <AlertDialogAction onClick={cancelWorkout}>בטל אימון</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {historyExercise && (
           <ExerciseHistory exerciseName={historyExercise} onClose={() => setHistoryExercise(null)} />
