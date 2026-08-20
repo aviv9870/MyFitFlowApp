@@ -187,17 +187,40 @@ serve(async (req) => {
 
     if (type === "analyze") {
       const { history, genderContext } = body;
-      systemPrompt = `אתה מאמן כושר אישי שמכיר את המתאמן שלך היטב ומדבר איתו ישירות, כמו בשיחה אחרי אימון - לא כמו דוח רובוטי. ${genderContext ?? "פנה אליו בלשון זכר."}
-פנה תמיד ישירות למתאמן בגוף שני (אתה מתקדם יפה, שמתי לב שאתה..., כדאי שתנסה) - אף פעם אל תכתוב עליו בגוף שלישי (המשתמש, המתאמן מבצע). התייחס למספרים האמיתיים מההיסטוריה (תדירות, משקלים, תרגילים חוזרים) כדי שהתובנה תרגיש אישית ולא כללית, אבל שלב את שמות התרגילים והתוכניות בתוך המשפט בצורה טבעית בלי מרכאות סביבם. הימנע מניסוחים סתמיים כמו "המשתמש מבצע אימונים בתדירות גבוהה" - כתוב במקום זאת משהו שממש נשען על הנתונים הספציפיים שלו. טון חם, ישיר וקצת בלתי פורמלי, כמו מאמן שבאמת עוקב אחריך, לא כמו תבנית.`;
-      userPrompt = `היסטוריית אימונים:\n${JSON.stringify(history)}`;
+      systemPrompt = `אתה מאמן כוח מקצועי (רמת CSCS) שמנתח את נתוני האימון של המתאמן שלך ומדבר איתו ישירות. ${genderContext ?? "פנה אליו בלשון זכר."}
+
+נתח את הנתונים לפי עקרונות מדעי האימון, ולא ברמה כללית. במיוחד:
+- **סיווג טווחי חזרות לאיכות אימון**: 1-5 חזרות בעומס גבוה = כוח מרבי; 6-12 חזרות = היפרטרופיה; 13-20+ חזרות = סבולת שריר. חשב בפועל איך מתחלקות החזרות שלו בין הטווחים והסק מזה על מה הוא באמת עבד.
+- **נפח (Volume)**: סטים שבועיים לכל קבוצת שריר. 10-20 סטים לשבוע לקבוצת שריר הוא הטווח המקובל להיפרטרופיה. ציין אם הוא מתחת, בתוך, או מעל.
+- **עומס יתר מתקדם (Progressive Overload)**: האם המשקלים או החזרות עולים לאורך זמן באותם תרגילים, או תקועים.
+- **עצימות**: האם המשקלים ביחס לחזרות מעידים על עבודה קרובה לכשל או על עבודה שמרנית.
+- **איזון ותדירות**: קבוצות שריר שמוזנחות, ותדירות אימון לכל קבוצה.
+
+חשוב מאוד: בסס כל קביעה על המספרים האמיתיים שבנתונים - ציין טווחי חזרות, משקלים, וכמויות סטים ספציפיים. אל תכתוב אמירות כלליות שיכולות להתאים לכל מתאמן.
+
+פנה תמיד בגוף שני (אתה עובד בעיקר בטווח..., המשקלים שלך בתרגיל X תקועים כבר...) ולא בגוף שלישי. שלב שמות תרגילים בתוך המשפט בצורה טבעית בלי מרכאות. טון מקצועי, ישיר ובוגר - כמו מאמן שמכיר את המספרים, לא נוזף ולא מתלהב יתר על המידה.`;
+      userPrompt = `היסטוריית אימונים (sessions = אימונים, sets = סטים עם משקל וחזרות):\n${JSON.stringify(history)}`;
       toolName = "provide_analysis";
       toolParams = {
         type: "object",
         properties: {
+          training_qualities: {
+            type: "array",
+            description: "הערכה נפרדת לכל איכות אימון על סמך התפלגות טווחי החזרות והעומסים בפועל",
+            items: {
+              type: "object",
+              properties: {
+                quality: { type: "string", description: "שם האיכות: היפרטרופיה / כוח מרבי / סבולת שריר" },
+                verdict: { type: "string", description: "מילה או שתיים: עבודה טובה / חלקית / כמעט ולא" },
+                detail: { type: "string", description: "משפט אחד עם המספרים שמאחורי ההערכה (אחוז החזרות בטווח, כמות סטים וכו')" },
+              },
+              required: ["quality", "verdict", "detail"],
+            },
+          },
           insights: { type: "array", items: { type: "string" } },
           recommendation: { type: "string" },
         },
-        required: ["insights", "recommendation"],
+        required: ["training_qualities", "insights", "recommendation"],
       };
     } else if (type === "generate_plan") {
       const { goal, daysPerWeek, sessionDuration, focusMuscles, history } = body;
@@ -310,23 +333,41 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
       throw new Error("Unknown type: " + type);
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    // One shared AbortController for every provider meant a slow first
+    // provider burned the whole budget and left the fallbacks dead on
+    // arrival - they'd fail instantly on an already-aborted signal, which
+    // defeats the point of having a fallback chain. Each attempt now gets
+    // its own budget, bounded by an overall deadline.
+    const PER_ATTEMPT_MS = 25000;
+    const OVERALL_DEADLINE = Date.now() + 70000;
 
     try {
       // Gemini is the primary provider; Groq and then Cerebras are fallbacks
       // so the feature still works if Gemini (or Groq) is unavailable
       // (e.g. quota/billing issues).
-      const providers: { name: string; call: () => Promise<any> }[] = [];
+      type ProviderCall = (signal: AbortSignal) => Promise<any>;
+      const providers: { name: string; call: ProviderCall }[] = [];
       if (GEMINI_API_KEY) {
-        providers.push({ name: "Gemini", call: () => callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
+        providers.push({ name: "Gemini", call: (signal) => callGemini(GEMINI_API_KEY, systemPrompt, userPrompt, toolName, toolParams, signal) });
       }
       if (GROQ_API_KEY) {
-        providers.push({ name: "Groq", call: () => callGroq(GROQ_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
+        providers.push({ name: "Groq", call: (signal) => callGroq(GROQ_API_KEY, systemPrompt, userPrompt, toolName, toolParams, signal) });
       }
       if (CEREBRAS_API_KEY) {
-        providers.push({ name: "Cerebras", call: () => callCerebras(CEREBRAS_API_KEY, systemPrompt, userPrompt, toolName, toolParams, controller.signal) });
+        providers.push({ name: "Cerebras", call: (signal) => callCerebras(CEREBRAS_API_KEY, systemPrompt, userPrompt, toolName, toolParams, signal) });
       }
+
+      const runAttempt = async (call: ProviderCall) => {
+        const budget = Math.min(PER_ATTEMPT_MS, OVERALL_DEADLINE - Date.now());
+        if (budget <= 0) throw new Error("AI request deadline exceeded");
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), budget);
+        try {
+          return await call(controller.signal);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
 
       let result;
       let lastErr: unknown;
@@ -337,9 +378,10 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
         // transient generation glitch, not a systemic failure. Don't retry
         // on real API errors (bad key, no quota/billing) - those fail the
         // same way every time, so move straight to the next provider.
+        if (Date.now() >= OVERALL_DEADLINE) break;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            const attemptResult = await provider.call();
+            const attemptResult = await runAttempt(provider.call);
             if (JSON.stringify(attemptResult).includes("�")) {
               lastErr = new Error(`${provider.name} returned corrupted (invalid UTF-8) text`);
               console.error(`${provider.name} attempt ${attempt + 1} corrupted, retrying`);
@@ -357,12 +399,10 @@ ${focusMuscles?.length > 0 ? `שרירים למיקוד: ${focusMuscles.join(", 
         if (!lastErr) break;
       }
       if (lastErr) throw lastErr;
-      clearTimeout(timeoutId);
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (e) {
-      clearTimeout(timeoutId);
       throw e;
     }
   } catch (e: any) {

@@ -105,6 +105,11 @@ const Workout = () => {
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
   const [historyExercise, setHistoryExercise] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Guarding with state alone can't stop a fast double-tap: setFinishing is
+  // async, so a second click can land before the re-render disables the
+  // button, and both calls insert a session. The ref flips synchronously.
+  const finishingRef = useRef(false);
   // Tracks the order in which exercises were first completed (first set locked)
   const [completionOrder, setCompletionOrder] = useState<string[]>([]);
 
@@ -254,6 +259,8 @@ const Workout = () => {
         }),
       }))
     );
+    finishingRef.current = false;
+    setFinishing(false);
     setPhase("active");
   }, [user]);
 
@@ -360,6 +367,9 @@ const Workout = () => {
 
   const finishWorkout = async () => {
     if (!user || !selectedPlan) return;
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
 
     try {
       const { data: session, error: sessionError } = await supabase
@@ -404,11 +414,17 @@ const Workout = () => {
     } catch (err) {
       console.error(err);
       toast.error("שגיאה בשמירת האימון");
+      // Only release on failure - on success the workout is saved and the
+      // screen moves on, so the button must stay locked.
+      finishingRef.current = false;
+      setFinishing(false);
     }
   };
 
   const cancelWorkout = () => {
     localStorage.removeItem(WORKOUT_STORAGE_KEY);
+    finishingRef.current = false;
+    setFinishing(false);
     setPhase("select");
     setStartTimestamp(0);
     setElapsed(0);
@@ -760,10 +776,11 @@ const Workout = () => {
           </button>
           <button
             onClick={finishWorkout}
-            className="flex-[2] bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 neon-glow-box"
+            disabled={finishing}
+            className="flex-[2] bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 neon-glow-box disabled:opacity-60"
           >
-            <MaterialIcon icon="check" className="text-[20px]" />
-            סיים אימון
+            <MaterialIcon icon={finishing ? "hourglass_top" : "check"} className={`text-[20px] ${finishing ? "animate-spin" : ""}`} />
+            {finishing ? "שומר..." : "סיים אימון"}
           </button>
         </div>
 

@@ -29,12 +29,60 @@ interface VolumeTrend {
   deltaPct: number | null;
 }
 
+// How the weekly improvement figure was derived: matched-exercise estimated
+// 1RM, or the volume-per-set fallback when no exercise repeated across weeks.
+type ImprovementMethod = "e1rm" | "volume" | null;
+
+interface ImprovementDriver {
+  name: string;
+  pct: number;
+  fromWeight: number;
+  fromReps: number;
+  toWeight: number;
+  toReps: number;
+}
+
+// Names the actual mechanism behind an exercise's change, so the percentage
+// isn't just a number the trainee has to take on faith.
+const describeDriver = (d: ImprovementDriver) => {
+  const dw = d.toWeight - d.fromWeight;
+  const dr = d.toReps - d.fromReps;
+  if (dw > 0 && dr > 0) return "העלית משקל וגם חזרות";
+  if (dw > 0 && dr === 0) return "העלית משקל";
+  if (dw > 0 && dr < 0) return "משקל גבוה יותר, פחות חזרות";
+  if (dw === 0 && dr > 0) return "יותר חזרות באותו משקל";
+  if (dw < 0 && dr > 0) return "יותר חזרות, משקל נמוך יותר";
+  if (dw < 0) return "ירידה במשקל";
+  if (dr < 0) return "פחות חזרות";
+  return "ללא שינוי";
+};
+
 const Analytics = () => {
   const { user } = useAuth();
   const gender = useGender();
-  const [stats, setStats] = useState({ totalWorkouts: 0, avgDuration: 0, improvement: 0, isBaseWeek: false });
+  const [stats, setStats] = useState<{
+    totalWorkouts: number;
+    avgDuration: number;
+    improvement: number;
+    isBaseWeek: boolean;
+    method: ImprovementMethod;
+    comparedCount: number;
+    drivers: ImprovementDriver[];
+  }>({
+    totalWorkouts: 0,
+    avgDuration: 0,
+    improvement: 0,
+    isBaseWeek: false,
+    method: null,
+    comparedCount: 0,
+    drivers: [],
+  });
 
-  const [aiInsights, setAiInsights] = useState<{ insights: string[]; recommendation: string } | null>(null);
+  const [aiInsights, setAiInsights] = useState<{
+    training_qualities?: { quality: string; verdict: string; detail: string }[];
+    insights: string[];
+    recommendation: string;
+  } | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
 
   const [range, setRange] = useState<RangeKey>("week");
@@ -142,14 +190,16 @@ const Analytics = () => {
     // Estimated 1RM via Epley: weight * (1 + reps / 30)
     const epley1RM = (weight: number, reps: number) => weight * (1 + reps / 30);
 
-    // Best (top-set) e1RM per exercise
-    const bestE1RMByExercise = (sets: { exercise_name: string; weight: number; reps: number }[]) => {
-      const map: Record<string, number> = {};
+    // Best (top-set) per exercise. Keeping the set's weight and reps - not just
+    // the e1RM - is what lets the card explain *why* the number moved, since a
+    // single percentage can come from heavier load or from more reps.
+    const bestSetByExercise = (sets: { exercise_name: string; weight: number; reps: number }[]) => {
+      const map: Record<string, { e1rm: number; weight: number; reps: number }> = {};
       sets.forEach((s) => {
         if (s.reps <= 0 || s.weight <= 0) return;
         const e1rm = epley1RM(s.weight, s.reps);
-        if (!map[s.exercise_name] || e1rm > map[s.exercise_name]) {
-          map[s.exercise_name] = e1rm;
+        if (!map[s.exercise_name] || e1rm > map[s.exercise_name].e1rm) {
+          map[s.exercise_name] = { e1rm, weight: s.weight, reps: s.reps };
         }
       });
       return map;
@@ -157,21 +207,33 @@ const Analytics = () => {
 
     let improvement = 0;
     let isBaseWeek = false;
+    let method: ImprovementMethod = null;
+    let comparedCount = 0;
+    let drivers: ImprovementDriver[] = [];
 
     if (older.length === 0) {
       // No data at all from last week - nothing to compare against yet
       isBaseWeek = true;
     } else {
-      const recentBest = bestE1RMByExercise(recent);
-      const olderBest = bestE1RMByExercise(older);
-      const matchedExercises = Object.keys(recentBest).filter((ex) => olderBest[ex] !== undefined && olderBest[ex] > 0);
+      const recentBest = bestSetByExercise(recent);
+      const olderBest = bestSetByExercise(older);
+      const matchedExercises = Object.keys(recentBest).filter((ex) => olderBest[ex] !== undefined && olderBest[ex].e1rm > 0);
 
       if (matchedExercises.length > 0) {
         // Matched-exercise e1RM improvement, averaged across exercises trained in both weeks
-        const pctChanges = matchedExercises.map(
-          (ex) => ((recentBest[ex] - olderBest[ex]) / olderBest[ex]) * 100
-        );
-        improvement = pctChanges.reduce((a, b) => a + b, 0) / pctChanges.length;
+        method = "e1rm";
+        comparedCount = matchedExercises.length;
+        drivers = matchedExercises
+          .map((ex) => ({
+            name: ex,
+            pct: ((recentBest[ex].e1rm - olderBest[ex].e1rm) / olderBest[ex].e1rm) * 100,
+            fromWeight: olderBest[ex].weight,
+            fromReps: olderBest[ex].reps,
+            toWeight: recentBest[ex].weight,
+            toReps: recentBest[ex].reps,
+          }))
+          .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+        improvement = drivers.reduce((a, d) => a + d.pct, 0) / drivers.length;
       } else {
         // Fallback: change in volume-per-working-set when no exercise overlaps between weeks
         const volumePerSet = (sets: { weight: number; reps: number }[]) =>
@@ -179,6 +241,7 @@ const Analytics = () => {
         const recentVPS = volumePerSet(recent);
         const olderVPS = volumePerSet(older);
         if (recentVPS !== null && olderVPS !== null && olderVPS > 0) {
+          method = "volume";
           improvement = ((recentVPS - olderVPS) / olderVPS) * 100;
         }
       }
@@ -189,6 +252,9 @@ const Analytics = () => {
       avgDuration: recentCount > 0 ? Math.floor(avgDur / recentCount / 60) : 0,
       improvement: Math.round(improvement * 10) / 10,
       isBaseWeek,
+      method,
+      comparedCount,
+      drivers: drivers.slice(0, 3),
     });
   };
 
@@ -265,7 +331,10 @@ const Analytics = () => {
         .select("exercise_name, weight, reps, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(50);
+        // Rep-range distribution is the basis of the training-quality
+        // assessment, so it needs a real sample, not just the last few sets -
+        // but the prompt still has to generate inside the request budget.
+        .limit(150);
 
       const genderContext = gender === "female" ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
       const { data, error } = await supabase.functions.invoke("ai-workout", {
@@ -380,8 +449,31 @@ const Analytics = () => {
               <MaterialIcon icon={stats.improvement >= 0 ? "trending_up" : "trending_down"} className="text-primary text-[24px]" />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              שינוי ב-1RM המשוער (Epley) בתרגילים שחזרו על עצמם השבוע לעומת שבוע שעבר
+              {stats.method === "volume"
+                ? "לא חזרת על אותם תרגילים בשני השבועות, אז ההשוואה היא לפי נפח ממוצע לסט"
+                : `ממוצע השינוי ב-1RM המשוער (Epley) על פני ${stats.comparedCount} תרגילים שחזרו בשני השבועות`}
             </p>
+
+            {stats.drivers.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/40 space-y-2">
+                <p className="text-[11px] font-semibold text-muted-foreground">ממה נובע השיפור</p>
+                {stats.drivers.map((d) => (
+                  <div key={d.name} className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-foreground truncate">{d.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {d.fromWeight}ק״ג × {d.fromReps} ← {d.toWeight}ק״ג × {d.toReps}
+                        <span className="mx-1">·</span>
+                        {describeDriver(d)}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-bold shrink-0 ${d.pct >= 0 ? "text-primary" : "text-destructive"}`}>
+                      {d.pct > 0 ? "+" : ""}{Math.round(d.pct * 10) / 10}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -413,6 +505,20 @@ const Analytics = () => {
 
         {aiInsights ? (
           <div className="space-y-2">
+            {aiInsights.training_qualities && aiInsights.training_qualities.length > 0 && (
+              <div className="bg-secondary/50 rounded-xl p-3 space-y-2.5">
+                <span className="text-xs font-semibold text-primary">איכויות אימון</span>
+                {aiInsights.training_qualities.map((q, i) => (
+                  <div key={i}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-semibold text-foreground">{q.quality}</span>
+                      <span className="text-[11px] text-primary shrink-0">{q.verdict}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{q.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             {aiInsights.insights.map((insight, i) => (
               <div key={i} className="bg-secondary/50 rounded-xl p-3">
                 <div className="flex items-start gap-2">
