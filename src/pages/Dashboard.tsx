@@ -217,6 +217,9 @@ const Dashboard = () => {
           completedAt={lastSession.completed_at}
           onClose={() => setShowSummary(false)}
           onDeleted={() => { setShowSummary(false); setLastSession(null); }}
+          onUpdated={(newDurationSeconds) =>
+            setLastSession((prev) => (prev ? { ...prev, duration_seconds: newDurationSeconds } : prev))
+          }
         />
       )}
     </div>

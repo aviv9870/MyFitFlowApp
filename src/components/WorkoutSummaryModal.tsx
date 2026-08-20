@@ -4,6 +4,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import PersonalRecords from "@/components/PersonalRecords";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface SetLog {
   exercise_name: string;
@@ -20,10 +30,11 @@ interface Props {
   completedAt: string;
   onClose: () => void;
   onDeleted?: () => void;
+  onUpdated?: (newDurationSeconds: number) => void;
   readOnly?: boolean;
 }
 
-const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt, onClose, onDeleted, readOnly }: Props) => {
+const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt, onClose, onDeleted, onUpdated, readOnly }: Props) => {
   const { user } = useAuth();
   const [sets, setSets] = useState<SetLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,8 +43,15 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   const [gender, setGender] = useState<string>("male");
   const [editing, setEditing] = useState(false);
   const [editSets, setEditSets] = useState<SetLog[]>([]);
+  const [editMinutes, setEditMinutes] = useState(0);
+  const [duration, setDuration] = useState(durationSeconds);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    setDuration(durationSeconds);
+  }, [durationSeconds]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,7 +81,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   });
 
   const totalVolume = displaySets.reduce((a, s) => a + s.weight * s.reps, 0);
-  const m = Math.floor(durationSeconds / 60);
+  const m = Math.floor(duration / 60);
   const date = new Date(completedAt).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 
   const deleteSession = async () => {
@@ -80,6 +98,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
 
   const startEditing = () => {
     setEditSets(sets.map(s => ({ ...s })));
+    setEditMinutes(Math.floor(duration / 60));
     setEditing(true);
   };
 
@@ -122,6 +141,17 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
           );
           throw insErr;
         }
+      }
+
+      const newDurationSeconds = Math.max(0, editMinutes) * 60;
+      if (newDurationSeconds !== duration) {
+        const { error: durErr } = await supabase
+          .from("workout_sessions")
+          .update({ duration_seconds: newDurationSeconds })
+          .eq("id", sessionId);
+        if (durErr) throw durErr;
+        setDuration(newDurationSeconds);
+        onUpdated?.(newDurationSeconds);
       }
 
       setSets(editSets.filter(s => s.reps > 0));
@@ -215,7 +245,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
         <div className="flex items-center gap-2">
           {!readOnly && (
             <button
-              onClick={deleteSession}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deleting}
               className="p-1 text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
               title="מחק אימון"
@@ -259,7 +289,20 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
           <div className="flex gap-4 mt-3">
             <div className="flex items-center gap-1">
               <MaterialIcon icon="schedule" className="text-primary text-[16px]" />
-              <span className="text-sm text-foreground">{m} דק׳</span>
+              {editing ? (
+                <span className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    value={editMinutes}
+                    onChange={(e) => setEditMinutes(Number(e.target.value))}
+                    className="w-12 bg-secondary/50 border border-border rounded px-1 py-0.5 text-xs text-foreground"
+                  />
+                  <span className="text-sm text-foreground">דק׳</span>
+                </span>
+              ) : (
+                <span className="text-sm text-foreground">{m} דק׳</span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <MaterialIcon icon="fitness_center" className="text-primary text-[16px]" />
@@ -272,6 +315,21 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
           </div>
         </div>
       </div>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>למחוק את האימון?</AlertDialogTitle>
+            <AlertDialogDescription>
+              האימון וכל הסטים שנרשמו בו יימחקו לצמיתות ולא ניתן יהיה לשחזר אותם.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ביטול</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteSession}>מחק אימון</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit save/cancel bar */}
       {editing && (

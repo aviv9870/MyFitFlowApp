@@ -104,6 +104,7 @@ const History = ({ onClose }: { onClose?: () => void }) => {
           setSummarySession(null);
           fetchHistory();
         }}
+        onUpdated={() => fetchHistory()}
       />
     );
   }
