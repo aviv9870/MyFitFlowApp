@@ -33,8 +33,9 @@ const ProtectedRoutes = () => {
 
   if (loading || (user && needsOnboarding === null)) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <span className="neon-text text-xl font-bold animate-pulse-neon">MyFitFlow</span>
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+        <img src="/logo-icon-512.png" alt="MyFitFlow" className="w-16 h-16 rounded-2xl animate-pulse-neon" />
+        <span className="neon-text text-xl font-bold">MyFitFlow</span>
       </div>
     );
   }
@@ -67,8 +68,9 @@ const AppRoutes = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <span className="neon-text text-xl font-bold animate-pulse-neon">MyFitFlow</span>
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+        <img src="/logo-icon-512.png" alt="MyFitFlow" className="w-16 h-16 rounded-2xl animate-pulse-neon" />
+        <span className="neon-text text-xl font-bold">MyFitFlow</span>
       </div>
     );
   }

@@ -33,6 +33,7 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <img src="/logo-icon-512.png" alt="MyFitFlow" className="w-20 h-20 mx-auto mb-3 rounded-2xl" />
           <h1 className="text-3xl font-bold neon-text mb-2">MyFitFlow</h1>
           <p className="text-muted-foreground text-sm">אפליקציית כושר חכמה</p>
         </div>
