@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import MaterialIcon from "@/components/MaterialIcon";
+import TrendChart from "@/components/charts/TrendChart";
+import type { TrendPoint } from "@/lib/chartData";
 import { fetchAdherenceHistory, fetchAverageAdherence } from "@/services/nutrition";
 import { getAdherenceHistory, averageAdherence } from "@/services/nutritionLocal";
 
@@ -16,12 +17,13 @@ interface Props {
 
 // Weekly nutrition-adherence trend (spec §3: "גרף מגמה שבועי לעמידה ביעדי תזונה").
 const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0, isMock = false }: Props) => {
-  const [data, setData] = useState<{ label: string; value: number | null }[]>([]);
+  const [data, setData] = useState<TrendPoint[]>([]);
   const [avg, setAvg] = useState<number | null>(null);
-  const [hasData, setHasData] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     const apply = (history: { date: string; adherence: number | null }[], average: number | null) => {
       if (cancelled) return;
@@ -32,7 +34,7 @@ const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0, isMock = false }:
         }))
       );
       setAvg(average);
-      setHasData(history.some((p) => p.adherence !== null));
+      setLoading(false);
     };
 
     if (isMock) {
@@ -40,7 +42,10 @@ const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0, isMock = false }:
     } else {
       Promise.all([fetchAdherenceHistory(traineeId, days), fetchAverageAdherence(traineeId, days)])
         .then(([history, average]) => apply(history, average))
-        .catch((err) => console.error(err));
+        .catch((err) => {
+          console.error(err);
+          if (!cancelled) setLoading(false);
+        });
     }
 
     return () => {
@@ -60,28 +65,19 @@ const AdherenceTrend = ({ traineeId, days = 7, refreshKey = 0, isMock = false }:
         )}
       </div>
 
-      {hasData ? (
-        <div className="h-40">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border) / 0.15)" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} interval="preserveStartEnd" />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} width={28} />
-              <ReferenceLine y={100} stroke="oklch(var(--primary) / 0.35)" strokeDasharray="4 4" />
-              <Tooltip
-                formatter={(value: number) => [`${value}%`, "עמידה"]}
-                contentStyle={{ background: "oklch(var(--card))", border: "1px solid oklch(var(--border) / 0.15)", borderRadius: "10px", fontSize: "12px" }}
-              />
-              <Line type="monotone" dataKey="value" stroke="oklch(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "oklch(var(--primary))" }} connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        <div className="text-center py-6">
-          <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
-          <p className="text-xs text-muted-foreground">עדיין אין נתוני עמידה — סמן ארוחות כ״נאכל״ כדי לצבור מגמה</p>
-        </div>
-      )}
+      <TrendChart
+        data={data}
+        loading={loading}
+        height={160}
+        unit="%"
+        valueLabel="עמידה"
+        minPoints={1}
+        connectNulls
+        showYAxis
+        yDomain={[0, 100]}
+        emptyTitle="עדיין אין נתוני עמידה"
+        emptyHint="סמן ארוחות כ״נאכל״ כדי לצבור מגמה"
+      />
     </div>
   );
 };

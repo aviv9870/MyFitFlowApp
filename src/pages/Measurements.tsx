@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
-import ChartTooltip from "@/components/ChartTooltip";
+import TrendChart from "@/components/charts/TrendChart";
+import { sparsePoints } from "@/lib/chartData";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useGender } from "@/hooks/useGender";
 
 interface Measurement {
@@ -42,7 +42,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [graphField, setGraphField] = useState<string>("weight");
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [loadingMeasurements, setLoadingMeasurements] = useState(true);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [loadingAi, setLoadingAi] = useState(false);
 
@@ -53,13 +53,22 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
 
   const fetchMeasurements = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("body_measurements")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("measured_at", { ascending: false })
-      .limit(50);
-    setMeasurements((data ?? []) as Measurement[]);
+    setLoadingMeasurements(true);
+    try {
+      const { data, error } = await supabase
+        .from("body_measurements")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("measured_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setMeasurements((data ?? []) as Measurement[]);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת המדידות");
+    } finally {
+      setLoadingMeasurements(false);
+    }
   };
 
   const saveMeasurement = async () => {
@@ -73,7 +82,9 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
     try {
       const row: any = { user_id: user.id, notes: notes || null };
       fields.forEach((f) => {
-        row[f.key] = form[f.key] ? parseFloat(form[f.key]) : null;
+        // Guard against a garbled/partial number turning into NaN in the DB.
+        const parsed = form[f.key] ? parseFloat(form[f.key]) : null;
+        row[f.key] = parsed != null && Number.isFinite(parsed) ? parsed : null;
       });
 
       const { error } = await supabase.from("body_measurements").insert(row);
@@ -121,13 +132,10 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
     return curr - prev;
   };
 
-  const graphData = measurements
-    .filter((m) => (m as any)[graphField] != null)
-    .map((m) => ({
-      date: new Date(m.measured_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-      value: (m as any)[graphField],
-    }))
-    .reverse();
+  const graphData = useMemo(
+    () => sparsePoints([...measurements].reverse(), (m) => m.measured_at, (m) => (m as any)[graphField]),
+    [measurements, graphField]
+  );
 
   const selectedField = fields.find((f) => f.key === graphField);
 
@@ -234,7 +242,7 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
               {fields.map((f) => (
                 <button
                   key={f.key}
-                  onClick={() => { setGraphField(f.key); setActiveIdx(null); }}
+                  onClick={() => setGraphField(f.key)}
                   className={`text-[10px] px-2 py-1 rounded-full transition-all ${
                     graphField === f.key
                       ? "bg-primary text-primary-foreground"
@@ -246,50 +254,15 @@ const Measurements = ({ onClose }: { onClose: () => void }) => {
               ))}
             </div>
 
-            {graphData.length >= 2 ? (
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={graphData}
-                    onClick={(state) => {
-                      const idx = state?.activeTooltipIndex;
-                      if (idx == null) return;
-                      setActiveIdx((prev) => (prev === idx ? null : idx));
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis
-                      tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
-                      width={40}
-                      domain={["auto", "auto"]}
-                    />
-                    <Tooltip
-                      active={activeIdx !== null}
-                      defaultIndex={activeIdx ?? undefined}
-                      content={<ChartTooltip unit={selectedField?.unit} valueLabel={selectedField?.label} />}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke="oklch(var(--primary))"
-                      strokeWidth={2}
-                      dot={{ r: 3, fill: "oklch(var(--primary))" }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
-                <p className="text-xs text-muted-foreground">צריך לפחות 2 מדידות כדי להציג גרף</p>
-              </div>
-            )}
+            <TrendChart
+              data={graphData}
+              loading={loadingMeasurements}
+              height={176}
+              unit={selectedField?.unit}
+              valueLabel={selectedField?.label}
+              showYAxis
+              emptyTitle={loadingMeasurements ? "" : "צריך לפחות 2 מדידות כדי להציג גרף"}
+            />
           </div>
         )}
       </div>

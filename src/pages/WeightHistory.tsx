@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
-import ChartTooltip from "@/components/ChartTooltip";
+import TrendChart from "@/components/charts/TrendChart";
+import { sparsePoints } from "@/lib/chartData";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 
 interface WeightLog {
   id: string;
@@ -15,9 +15,9 @@ interface WeightLog {
 const WeightHistory = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuth();
   const [logs, setLogs] = useState<WeightLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [newWeight, setNewWeight] = useState("");
   const [saving, setSaving] = useState(false);
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -26,22 +26,36 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
 
   const fetchLogs = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("body_weight_logs")
-      .select("id, weight, logged_at")
-      .eq("user_id", user.id)
-      .order("logged_at", { ascending: false })
-      .limit(100);
-    setLogs((data ?? []) as WeightLog[]);
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("body_weight_logs")
+        .select("id, weight, logged_at")
+        .eq("user_id", user.id)
+        .order("logged_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      setLogs((data ?? []) as WeightLog[]);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בטעינת היסטוריית המשקל");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const saveWeight = async () => {
     if (!user || !newWeight) return;
+    const parsed = parseFloat(newWeight);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 500) {
+      toast.error("משקל לא תקין");
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await supabase.from("body_weight_logs").insert({
         user_id: user.id,
-        weight: parseFloat(newWeight),
+        weight: parsed,
       });
       if (error) throw error;
       toast.success("המשקל נשמר!");
@@ -59,12 +73,12 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
   const previous = logs[1];
   const diff = latest && previous ? latest.weight - previous.weight : null;
 
-  const graphData = logs
-    .map((l) => ({
-      date: new Date(l.logged_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-      value: l.weight,
-    }))
-    .reverse();
+  // logs is fetched newest-first; sparsePoints wants chronological order
+  // for the trend chart's x-axis.
+  const graphData = useMemo(
+    () => sparsePoints([...logs].reverse(), (l) => l.logged_at, (l) => l.weight),
+    [logs]
+  );
 
   return (
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
@@ -126,50 +140,15 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
           <MaterialIcon icon="show_chart" className="text-primary text-[18px]" />
           גרף משקל
         </h3>
-        {graphData.length >= 2 ? (
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={graphData}
-                onClick={(state) => {
-                  const idx = state?.activeTooltipIndex;
-                  if (idx == null) return;
-                  setActiveIdx((prev) => (prev === idx ? null : idx));
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }}
-                  width={40}
-                  domain={["auto", "auto"]}
-                />
-                <Tooltip
-                  active={activeIdx !== null}
-                  defaultIndex={activeIdx ?? undefined}
-                  content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="oklch(var(--primary))"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "oklch(var(--primary))" }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="text-center py-6">
-            <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
-            <p className="text-xs text-muted-foreground">צריך לפחות 2 הזנות משקל כדי להציג גרף</p>
-          </div>
-        )}
+        <TrendChart
+          data={graphData}
+          loading={loading}
+          height={192}
+          unit="ק״ג"
+          valueLabel="משקל"
+          showYAxis
+          emptyTitle={loading ? "" : "צריך לפחות 2 הזנות משקל כדי להציג גרף"}
+        />
       </div>
 
       {/* History list */}
@@ -180,7 +159,13 @@ const WeightHistory = ({ onClose }: { onClose: () => void }) => {
         </span>
       </div>
 
-      {logs.length === 0 ? (
+      {loading ? (
+        <div className="space-y-2 animate-pulse" aria-hidden="true">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="glass-card p-3 h-11" />
+          ))}
+        </div>
+      ) : logs.length === 0 ? (
         <div className="text-center py-8">
           <MaterialIcon icon="monitor_weight" className="text-muted-foreground text-[32px] mb-2" />
           <p className="text-sm text-muted-foreground">עדיין לא הוזן משקל</p>

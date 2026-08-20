@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
-import ChartTooltip from "@/components/ChartTooltip";
+import TrendChart from "@/components/charts/TrendChart";
+import DistributionBars from "@/components/charts/DistributionBars";
+import { bucketByDay, bucketByMonth, safeNumber, safeDiv, type TrendPoint } from "@/lib/chartData";
+import { canonicalMuscleGroup, muscleColor, formatSets, SYNERGIST_MAP } from "@/lib/muscleGroups";
 import { toast } from "sonner";
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useGender } from "@/hooks/useGender";
 
 type RangeKey = "week" | "month" | "year";
@@ -21,55 +23,8 @@ const RANGE_CONFIG: Record<RangeKey, { days: number; label: string; bucket: "day
   year: { days: 365, label: "נפח אימון שנתי", bucket: "month" },
 };
 
-// The exercises table has muscle_group values seeded in both English and
-// Hebrew for the same muscle (e.g. "Shoulders" and "כתפיים" both exist) -
-// normalize everything to a single canonical Hebrew name so the same
-// muscle doesn't get split into two separate bars in the distribution.
-const MUSCLE_GROUP_ALIASES: Record<string, string> = {
-  Back: "גב",
-  Biceps: "יד קדמית",
-  Chest: "חזה",
-  Core: "בטן",
-  Legs: "רגליים",
-  Shoulders: "כתפיים",
-  Triceps: "יד אחורית",
-};
-const canonicalMuscleGroup = (raw: string) => MUSCLE_GROUP_ALIASES[raw] ?? raw;
-
-// Distinct, fixed color per muscle (not a rank-based intensity scale) so
-// each muscle keeps a consistent, easily-distinguishable color regardless
-// of its current rank in the list. No yellow, by request.
-const MUSCLE_COLORS: Record<string, string> = {
-  "חזה": "#FF6B6B",
-  "גב": "#4ECDC4",
-  "כתפיים": "#5B9EE8",
-  "רגליים": "#8FD08A",
-  "יד קדמית": "#C58AF2",
-  "יד אחורית": "#F2789A",
-  "בטן": "#FF9F5B",
-  "אחר": "oklch(var(--muted-foreground))",
-};
-const muscleColor = (name: string) => MUSCLE_COLORS[name] ?? "oklch(var(--primary))";
-
-// Indirect (synergist) credit can produce values like 3.5 - round to the
-// nearest half-set and drop the trailing .0 for whole numbers.
-const formatSets = (n: number) => {
-  const rounded = Math.round(n * 2) / 2;
-  return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
-};
-
-// Compound exercises also load secondary muscles besides their primary
-// muscle_group - credit those as partial ("indirect") sets so the
-// distribution reflects real training load, not just the primary target.
-const SYNERGIST_MAP: Record<string, { muscle: string; factor: number }[]> = {
-  "חזה": [{ muscle: "יד אחורית", factor: 0.5 }],
-  "גב": [{ muscle: "יד קדמית", factor: 0.5 }],
-  "כתפיים": [{ muscle: "יד אחורית", factor: 0.5 }],
-  "רגליים": [{ muscle: "בטן", factor: 0.25 }],
-};
-
 interface VolumeTrend {
-  points: { label: string; value: number }[];
+  points: TrendPoint[];
   total: number;
   deltaPct: number | null;
 }
@@ -86,7 +41,6 @@ const Analytics = () => {
   const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [showTrendChart, setShowTrendChart] = useState(false);
-  const [activeTrendIdx, setActiveTrendIdx] = useState<number | null>(null);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
   const [muscleWeeklySetCounts, setMuscleWeeklySetCounts] = useState<Record<string, number>>({});
@@ -127,50 +81,18 @@ const Analytics = () => {
       const current = all.filter((row) => new Date(row.created_at) >= windowStart);
       const previous = all.filter((row) => new Date(row.created_at) < windowStart);
 
-      const sumVolume = (rows: { weight: number; reps: number }[]) =>
-        rows.reduce((a, row) => a + row.weight * row.reps, 0);
+      // safeNumber guards against a null/garbled weight or reps value
+      // silently turning the whole trend into NaN.
+      const volumeOf = (row: { weight: number; reps: number }) => safeNumber(row.weight) * safeNumber(row.reps);
+      const sumVolume = (rows: { weight: number; reps: number }[]) => rows.reduce((a, row) => a + volumeOf(row), 0);
       const currentTotal = sumVolume(current);
       const previousTotal = sumVolume(previous);
       const deltaPct = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : null;
 
-      let points: { label: string; value: number }[];
-      if (cfg.bucket === "day") {
-        const buckets: Record<string, number> = {};
-        const dayKeys: string[] = [];
-        for (let i = cfg.days - 1; i >= 0; i--) {
-          const d = new Date(now);
-          d.setDate(d.getDate() - i);
-          const key = d.toISOString().slice(0, 10);
-          dayKeys.push(key);
-          buckets[key] = 0;
-        }
-        current.forEach((row) => {
-          const key = new Date(row.created_at).toISOString().slice(0, 10);
-          if (buckets[key] !== undefined) buckets[key] += row.weight * row.reps;
-        });
-        points = dayKeys.map((key) => ({
-          label: new Date(key).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-          value: Math.round(buckets[key]),
-        }));
-      } else {
-        const buckets: Record<string, number> = {};
-        const monthKeys: string[] = [];
-        for (let i = 11; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const key = `${d.getFullYear()}-${d.getMonth()}`;
-          monthKeys.push(key);
-          buckets[key] = 0;
-        }
-        current.forEach((row) => {
-          const d = new Date(row.created_at);
-          const key = `${d.getFullYear()}-${d.getMonth()}`;
-          if (buckets[key] !== undefined) buckets[key] += row.weight * row.reps;
-        });
-        points = monthKeys.map((key) => {
-          const [y, m] = key.split("-").map(Number);
-          return { label: new Date(y, m, 1).toLocaleDateString("he-IL", { month: "short" }), value: Math.round(buckets[key]) };
-        });
-      }
+      const points =
+        cfg.bucket === "day"
+          ? bucketByDay(current, (row) => row.created_at, volumeOf, windowStart, now)
+          : bucketByMonth(current, (row) => row.created_at, volumeOf, 12, now);
 
       setVolumeTrend({ points, total: Math.round(currentTotal), deltaPct });
     } finally {
@@ -320,8 +242,9 @@ const Analytics = () => {
       .filter(([, count]) => count > 0)
       .map(([name, count]) => ({
         name,
-        pct: totalSets > 0 ? (count / totalSets) * 100 : 0,
-        weeklySets: muscleWeeklySetCounts[name] ?? 0,
+        pct: safeDiv(count, totalSets) * 100,
+        color: muscleColor(name),
+        detail: `${formatSets(muscleWeeklySetCounts[name] ?? 0)} סטים השבוע`,
       }))
       .sort((a, b) => b.pct - a.pct);
   }, [muscleSetCounts, muscleWeeklySetCounts]);
@@ -373,42 +296,12 @@ const Analytics = () => {
         <h3 className="text-sm font-semibold text-foreground mb-1">התפלגות אימונים לפי שרירים</h3>
         <p className="text-[11.5px] text-muted-foreground mb-4">30 הימים האחרונים · לפי סטים</p>
 
-        {muscleBars.length > 0 ? (
-          <div>
-            {muscleBars.map((m) => {
-              const isExpanded = expandedMuscle === m.name;
-              return (
-                <button
-                  key={m.name}
-                  onClick={() => setExpandedMuscle(isExpanded ? null : m.name)}
-                  className="w-full text-right mb-3.5 last:mb-0"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[12.5px] font-medium text-foreground">{m.name}</span>
-                    <span className="text-xs text-muted-foreground">{m.pct.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${m.pct}%`, backgroundColor: muscleColor(m.name) }}
-                    />
-                  </div>
-                  {isExpanded && (
-                    <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                      <MaterialIcon icon="event_repeat" className="text-[13px]" />
-                      {formatSets(m.weeklySets)} סטים השבוע
-                    </p>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-4">
-            <MaterialIcon icon="pie_chart" className="text-muted-foreground text-[32px] mb-1" />
-            <p className="text-xs text-muted-foreground">אין נתוני אימונים ב-30 ימים אחרונים</p>
-          </div>
-        )}
+        <DistributionBars
+          items={muscleBars}
+          emptyTitle="אין נתוני אימונים ב-30 ימים אחרונים"
+          onToggle={(name) => setExpandedMuscle((prev) => (prev === name ? null : name))}
+          expandedName={expandedMuscle}
+        />
 
         {/* Expand to reveal the volume trend chart */}
         <button
@@ -428,7 +321,7 @@ const Analytics = () => {
               {RANGE_TABS.map((r) => (
                 <button
                   key={r.key}
-                  onClick={() => { setRange(r.key); setActiveTrendIdx(null); }}
+                  onClick={() => setRange(r.key)}
                   className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
                     range === r.key ? "bg-primary/16 text-primary" : "text-muted-foreground hover:bg-secondary/50"
                   }`}
@@ -453,59 +346,16 @@ const Analytics = () => {
               )}
             </div>
 
-            {loadingTrend ? (
-              <div className="h-28 flex items-center justify-center">
-                <MaterialIcon icon="hourglass_top" className="text-primary text-[22px] animate-spin" />
-              </div>
-            ) : volumeTrend.points.some((p) => p.value > 0) ? (
-              <div className="h-28 mt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={volumeTrend.points}
-                    onClick={(state) => {
-                      const idx = state?.activeTooltipIndex;
-                      if (idx == null) return;
-                      setActiveTrendIdx((prev) => (prev === idx ? null : idx));
-                    }}
-                  >
-                    <defs>
-                      <linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="oklch(var(--primary))" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="oklch(var(--primary))" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid horizontal={true} vertical={false} stroke="oklch(var(--border))" strokeOpacity={0.4} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 9.5, fill: "oklch(var(--muted-foreground))" }}
-                      interval="preserveStartEnd"
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis hide domain={[0, "auto"]} />
-                    <Tooltip
-                      active={activeTrendIdx !== null}
-                      defaultIndex={activeTrendIdx ?? undefined}
-                      content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="value"
-                      stroke="oklch(var(--primary))"
-                      strokeWidth={2.5}
-                      fill="url(#volumeFill)"
-                      dot={false}
-                      activeDot={{ r: 4, fill: "oklch(var(--primary))" }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <MaterialIcon icon="show_chart" className="text-muted-foreground text-[28px] mb-1" />
-                <p className="text-xs text-muted-foreground">אין נתוני אימונים בטווח הזה</p>
-              </div>
-            )}
+            <div className="mt-2">
+              <TrendChart
+                data={volumeTrend.points}
+                loading={loadingTrend}
+                height={112}
+                unit="ק״ג"
+                valueLabel="נפח"
+                emptyTitle="אין נתוני אימונים בטווח הזה"
+              />
+            </div>
           </div>
         )}
       </div>

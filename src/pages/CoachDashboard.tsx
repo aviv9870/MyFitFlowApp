@@ -2,11 +2,13 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
-import ChartTooltip from "@/components/ChartTooltip";
+import TrendChart from "@/components/charts/TrendChart";
+import DistributionBars from "@/components/charts/DistributionBars";
+import { safeNumber, safeDiv, type TrendPoint } from "@/lib/chartData";
+import { canonicalMuscleGroup, muscleColor, SYNERGIST_MAP } from "@/lib/muscleGroups";
 import WorkoutSummaryModal from "@/components/WorkoutSummaryModal";
 import PlanEditor from "@/components/PlanEditor";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { FOODS_SEED } from "@/data/foodsSeed";
 import { mealActualMacros, mealTargetMacros, dayTargetMacros, planActualMacros, type PlanMeal, type MacroTotals } from "@/domain/nutrition-calculations";
 import { fetchBasePlan, saveBasePlan } from "@/services/nutrition";
@@ -58,11 +60,6 @@ const getEdgeFunctionErrorMessage = async (error: unknown, fallback: string): Pr
   return error instanceof Error ? error.message : fallback;
 };
 
-const MUSCLE_COLORS: Record<string, string> = {
-  "חזה": "#FF6B6B", "גב": "#4ECDC4", "כתפיים": "#45B7D1", "רגליים": "#96CEB4",
-  "יד קדמית": "#FFEAA7", "יד אחורית": "#DDA0DD", "בטן": "#FF8C42",
-};
-
 const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuth();
   const [trainees, setTrainees] = useState<Trainee[]>([]);
@@ -76,15 +73,13 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
   const [summarySession, setSummarySession] = useState<SessionRow | null>(null);
 
   // Progress
-  const [progressData, setProgressData] = useState<any[]>([]);
-  const [muscleVolumes, setMuscleVolumes] = useState<Record<string, number>>({});
+  const [progressData, setProgressData] = useState<TrendPoint[]>([]);
+  const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
   const [loadingProgress, setLoadingProgress] = useState(false);
-  const [activeProgressIdx, setActiveProgressIdx] = useState<number | null>(null);
 
   // Weight
-  const [weightData, setWeightData] = useState<{ date: string; weight: number }[]>([]);
+  const [weightData, setWeightData] = useState<TrendPoint[]>([]);
   const [loadingWeight, setLoadingWeight] = useState(false);
-  const [activeWeightIdx, setActiveWeightIdx] = useState<number | null>(null);
 
   // Plans
   const [plans, setPlans] = useState<{ id: string; name: string; description: string | null; exerciseCount: number }[]>([]);
@@ -321,27 +316,37 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
       const setLogs = isMock ? getMockSetLogs(traineeId) : (await supabase.from("workout_set_logs").select("session_id, exercise_name, weight, reps").eq("user_id", traineeId)).data;
 
       const { data: exercises } = await supabase.from("exercises").select("name, muscle_group");
-      const exerciseGroupMap = new Map((exercises ?? []).map((e) => [e.name, e.muscle_group]));
+      const exerciseGroupMap = new Map((exercises ?? []).map((e) => [e.name, canonicalMuscleGroup(e.muscle_group ?? "אחר")]));
 
-      // Volume per session for line chart
+      // Volume per session for the line chart (safeNumber guards against a
+      // null/garbled weight or reps silently turning the whole chart to NaN).
       const sessionVolumes: Record<string, number> = {};
-      const volumes: Record<string, number> = {};
+      // Set counts per muscle for the distribution bars, with the same
+      // synergist ("indirect") crediting used on the trainee-facing
+      // Analytics screen, so a coach and trainee see the same metric.
+      const setCounts: Record<string, number> = {};
+      const addCredit = (group: string, amount: number) => {
+        setCounts[group] = (setCounts[group] ?? 0) + amount;
+        SYNERGIST_MAP[group]?.forEach(({ muscle, factor }) => {
+          setCounts[muscle] = (setCounts[muscle] ?? 0) + amount * factor;
+        });
+      };
       (setLogs ?? []).forEach((log) => {
-        sessionVolumes[log.session_id] = (sessionVolumes[log.session_id] ?? 0) + log.weight * log.reps;
+        sessionVolumes[log.session_id] = (sessionVolumes[log.session_id] ?? 0) + safeNumber(log.weight) * safeNumber(log.reps);
         const group = exerciseGroupMap.get(log.exercise_name) ?? "אחר";
-        volumes[group] = (volumes[group] ?? 0) + log.weight * log.reps;
+        addCredit(group, 1);
       });
 
-      setMuscleVolumes(volumes);
+      setMuscleSetCounts(setCounts);
       setProgressData(
-        (allSessions ?? []).map((s, i) => ({
-          date: new Date(s.completed_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-          volume: sessionVolumes[s.id] ?? 0,
-          workout: i + 1,
+        (allSessions ?? []).map((s) => ({
+          label: new Date(s.completed_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
+          value: Math.round(sessionVolumes[s.id] ?? 0),
         }))
       );
     } catch (err) {
       console.error(err);
+      toast.error("שגיאה בטעינת נתוני התקדמות");
     } finally {
       setLoadingProgress(false);
     }
@@ -364,8 +369,8 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
       }
       setWeightData(
         (data ?? []).map((d) => ({
-          date: new Date(d.logged_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
-          weight: d.weight,
+          label: new Date(d.logged_at).toLocaleDateString("he-IL", { day: "numeric", month: "short" }),
+          value: safeNumber(d.weight),
         }))
       );
     } catch (err) {
@@ -675,13 +680,13 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-  const barData = useMemo(() => {
-    return Object.entries(muscleVolumes)
-      .filter(([, v]) => v > 0)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [muscleVolumes]);
-  const totalMuscleVolume = useMemo(() => barData.reduce((a, d) => a + d.value, 0), [barData]);
+  const muscleBars = useMemo(() => {
+    const totalSets = Object.values(muscleSetCounts).reduce((a, v) => a + v, 0);
+    return Object.entries(muscleSetCounts)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => ({ name, pct: safeDiv(count, totalSets) * 100, color: muscleColor(name) }))
+      .sort((a, b) => b.pct - a.pct);
+  }, [muscleSetCounts]);
 
   if (summarySession && selectedTrainee) {
     return (
@@ -978,74 +983,31 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                   רענן
                 </button>
               </div>
-              {loadingProgress ? (
-                <div className="text-center mt-10">
-                  <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
-                  <p className="text-xs text-muted-foreground mt-2">טוען נתונים...</p>
-                </div>
-              ) : (
-                <>
-                  {/* Volume over time */}
-                  <div className="glass-card p-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                      <MaterialIcon icon="show_chart" className="text-primary text-[18px]" />
-                      נפח אימון לאורך זמן
-                    </h3>
-                    {progressData.length > 0 ? (
-                      <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart
-                            data={progressData}
-                            onClick={(state) => {
-                              const idx = state?.activeTooltipIndex;
-                              if (idx == null) return;
-                              setActiveProgressIdx((prev) => (prev === idx ? null : idx));
-                            }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
-                            <XAxis dataKey="date" tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} interval="preserveStartEnd" />
-                            <YAxis tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} width={45} />
-                            <Tooltip
-                              active={activeProgressIdx !== null}
-                              defaultIndex={activeProgressIdx ?? undefined}
-                              content={<ChartTooltip unit="ק״ג" valueLabel="נפח" />}
-                            />
-                            <Line type="monotone" dataKey="volume" stroke="oklch(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "oklch(var(--primary))" }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-6">אין נתונים עדיין</p>
-                    )}
-                  </div>
+              {/* Volume over time */}
+              <div className="glass-card p-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <MaterialIcon icon="show_chart" className="text-primary text-[18px]" />
+                  נפח אימון לאורך זמן
+                </h3>
+                <TrendChart
+                  data={progressData}
+                  loading={loadingProgress}
+                  height={176}
+                  unit="ק״ג"
+                  valueLabel="נפח"
+                  showYAxis
+                  emptyTitle="אין נתונים עדיין"
+                />
+              </div>
 
-                  {/* Muscle distribution */}
-                  <div className="glass-card p-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                      <MaterialIcon icon="pie_chart" className="text-primary text-[18px]" />
-                      התפלגות לפי שרירים
-                    </h3>
-                    {barData.length > 0 ? (
-                      <div className="space-y-2">
-                        {barData.map((d) => {
-                          const pct = totalMuscleVolume > 0 ? (d.value / totalMuscleVolume) * 100 : 0;
-                          return (
-                            <div key={d.name} className="flex items-center gap-2">
-                              <span className="text-[11px] text-foreground w-16 text-right shrink-0">{d.name}</span>
-                              <div className="flex-1 h-5 bg-secondary/50 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: MUSCLE_COLORS[d.name] || "oklch(var(--primary))" }} />
-                              </div>
-                              <span className="text-[10px] text-muted-foreground w-10 shrink-0">{pct.toFixed(0)}%</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground text-center py-4">אין נתונים</p>
-                    )}
-                  </div>
-                </>
-              )}
+              {/* Muscle distribution */}
+              <div className="glass-card p-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <MaterialIcon icon="pie_chart" className="text-primary text-[18px]" />
+                  התפלגות לפי שרירים · 30 יום
+                </h3>
+                <DistributionBars items={muscleBars} loading={loadingProgress} emptyTitle="אין נתונים" />
+              </div>
             </div>
           )}
 
@@ -1066,55 +1028,32 @@ const CoachDashboard = ({ onClose }: { onClose: () => void }) => {
                   רענן
                 </button>
               </div>
-              {loadingWeight ? (
-                <div className="text-center py-6">
-                  <MaterialIcon icon="hourglass_top" className="text-primary text-[24px] animate-spin" />
-                </div>
-              ) : weightData.length > 0 ? (
-                <>
-                  <div className="flex items-center justify-between mb-3">
+              {!loadingWeight && weightData.length > 0 && (
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-foreground">{weightData[weightData.length - 1].value}</p>
+                    <p className="text-[10px] text-muted-foreground">משקל נוכחי (ק״ג)</p>
+                  </div>
+                  {weightData.length > 1 && weightData[0].value !== null && weightData[weightData.length - 1].value !== null && (
                     <div className="text-center">
-                      <p className="text-2xl font-bold text-foreground">{weightData[weightData.length - 1].weight}</p>
-                      <p className="text-[10px] text-muted-foreground">משקל נוכחי (ק״ג)</p>
+                      <p className={`text-lg font-bold ${weightData[weightData.length - 1].value! - weightData[0].value! > 0 ? "text-destructive" : "text-green-500"}`}>
+                        {(weightData[weightData.length - 1].value! - weightData[0].value!).toFixed(1)}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">שינוי כולל (ק״ג)</p>
                     </div>
-                    {weightData.length > 1 && (
-                      <div className="text-center">
-                        <p className={`text-lg font-bold ${weightData[weightData.length - 1].weight - weightData[0].weight > 0 ? "text-destructive" : "text-green-500"}`}>
-                          {(weightData[weightData.length - 1].weight - weightData[0].weight).toFixed(1)}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">שינוי כולל (ק״ג)</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={weightData}
-                        onClick={(state) => {
-                          const idx = state?.activeTooltipIndex;
-                          if (idx == null) return;
-                          setActiveWeightIdx((prev) => (prev === idx ? null : idx));
-                        }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" />
-                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} interval="preserveStartEnd" />
-                        <YAxis tick={{ fontSize: 9, fill: "oklch(var(--muted-foreground))" }} width={45} domain={['auto', 'auto']} />
-                        <Tooltip
-                          active={activeWeightIdx !== null}
-                          defaultIndex={activeWeightIdx ?? undefined}
-                          content={<ChartTooltip unit="ק״ג" valueLabel="משקל" />}
-                        />
-                        <Line type="monotone" dataKey="weight" stroke="#4ECDC4" strokeWidth={2} dot={{ r: 3, fill: "#4ECDC4" }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-6">
-                  <MaterialIcon icon="monitor_weight" className="text-muted-foreground text-[32px] mb-1" />
-                  <p className="text-xs text-muted-foreground">אין נתוני משקל</p>
+                  )}
                 </div>
               )}
+              <TrendChart
+                data={weightData}
+                loading={loadingWeight}
+                height={176}
+                color="#4ECDC4"
+                unit="ק״ג"
+                valueLabel="משקל"
+                showYAxis
+                emptyTitle="אין נתוני משקל"
+              />
             </div>
           )}
 
