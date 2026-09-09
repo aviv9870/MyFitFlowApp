@@ -103,6 +103,7 @@ const Workout = () => {
   const [editingDone, setEditingDone] = useState(false);
   const [editPlan, setEditPlan] = useState<PlanData | null>(null);
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
+  const [addingExercise, setAddingExercise] = useState(false);
   const [historyExercise, setHistoryExercise] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -365,6 +366,63 @@ const Workout = () => {
     toast.success(`הוחלף ל-${newExercise.name}`);
   };
 
+  const ADDED_EXERCISE_SETS = 3;
+  const ADDED_EXERCISE_REST = 90;
+
+  const handleAddExercise = async (newExercise: { id: string; name: string; muscle_group: string }) => {
+    setAddingExercise(false);
+
+    // Pull the last time this exercise was trained so the added card shows the
+    // same "previous" hints as every exercise that came from the plan -
+    // otherwise it's the one card in the workout logging blind.
+    let prevSets: { weight: number; reps: number }[] = [];
+    if (user) {
+      const { data: latest } = await supabase
+        .from("workout_set_logs")
+        .select("session_id")
+        .eq("user_id", user.id)
+        .eq("exercise_name", newExercise.name)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const lastSessionId = latest?.[0]?.session_id;
+      if (lastSessionId) {
+        const { data: rows } = await supabase
+          .from("workout_set_logs")
+          .select("weight, reps")
+          .eq("user_id", user.id)
+          .eq("session_id", lastSessionId)
+          .eq("exercise_name", newExercise.name)
+          .order("set_number", { ascending: true });
+        prevSets = rows ?? [];
+      }
+    }
+
+    setExercises((prev) => [
+      ...prev,
+      {
+        name: newExercise.name,
+        exerciseId: newExercise.id,
+        targetSets: ADDED_EXERCISE_SETS,
+        restSeconds: ADDED_EXERCISE_REST,
+        repRange: getRepRange(newExercise.name),
+        tempo: "",
+        notes: "",
+        // Added mid-workout, so it belongs to no superset/triset group.
+        groupId: null,
+        groupType: null,
+        sets: Array.from({ length: ADDED_EXERCISE_SETS }, (_, setIdx) => ({
+          weight: 0,
+          reps: 0,
+          prevWeight: prevSets[setIdx]?.weight ?? null,
+          prevReps: prevSets[setIdx]?.reps ?? null,
+          locked: false,
+        })),
+      },
+    ]);
+    toast.success(`נוסף: ${newExercise.name}`);
+  };
+
   const finishWorkout = async () => {
     if (!user || !selectedPlan) return;
     if (finishingRef.current) return;
@@ -611,8 +669,17 @@ const Workout = () => {
         {swapIdx !== null && (
           <SwapExerciseModal
             currentExerciseName={exercises[swapIdx]?.name ?? ""}
-            onSwap={(ex) => handleSwap(swapIdx, ex)}
+            excludeNames={exercises.map((ex) => ex.name)}
+            onSelect={(ex) => handleSwap(swapIdx, ex)}
             onClose={() => setSwapIdx(null)}
+          />
+        )}
+        {addingExercise && (
+          <SwapExerciseModal
+            title="הוסף תרגיל"
+            excludeNames={exercises.map((ex) => ex.name)}
+            onSelect={handleAddExercise}
+            onClose={() => setAddingExercise(false)}
           />
         )}
         {/* Header with timer */}
@@ -766,6 +833,14 @@ const Workout = () => {
             return rendered;
           })()}
         </div>
+
+        <button
+          onClick={() => setAddingExercise(true)}
+          className="w-full mt-3 border border-dashed border-border rounded-xl py-3 flex items-center justify-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+        >
+          <MaterialIcon icon="add" className="text-[18px]" />
+          הוסף תרגיל
+        </button>
 
         <div className="flex gap-3 mt-6">
           <button

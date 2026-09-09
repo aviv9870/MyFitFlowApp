@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import PersonalRecords from "@/components/PersonalRecords";
+import SwapExerciseModal from "@/components/SwapExerciseModal";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -46,6 +47,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
   const [editMinutes, setEditMinutes] = useState(0);
   const [duration, setDuration] = useState(durationSeconds);
   const [saving, setSaving] = useState(false);
+  const [addingExercise, setAddingExercise] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -104,6 +106,36 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
 
   const updateEditSet = (idx: number, field: "weight" | "reps", value: number) => {
     setEditSets(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s));
+  };
+
+  // The rows of one exercise have to stay contiguous in editSets: the table
+  // below walks the grouped exercises with a running index to map each input
+  // back to its row, so a set inserted anywhere else would edit the wrong row.
+  const addEditSet = (exerciseName: string) => {
+    setEditSets(prev => {
+      let lastIdx = -1;
+      prev.forEach((s, i) => { if (s.exercise_name === exerciseName) lastIdx = i; });
+      if (lastIdx === -1) return prev;
+      const last = prev[lastIdx];
+      const next = [...prev];
+      next.splice(lastIdx + 1, 0, {
+        exercise_name: exerciseName,
+        set_number: last.set_number + 1,
+        weight: last.weight,
+        reps: last.reps,
+        exercise_order: last.exercise_order ?? null,
+      });
+      return next;
+    });
+  };
+
+  const handleAddExercise = (exercise: { id: string; name: string; muscle_group: string }) => {
+    setAddingExercise(false);
+    const maxOrder = editSets.reduce((m, s) => Math.max(m, s.exercise_order ?? 0), -1);
+    setEditSets(prev => [
+      ...prev,
+      { exercise_name: exercise.name, set_number: 1, weight: 0, reps: 0, exercise_order: maxOrder + 1 },
+    ]);
   };
 
   const saveEdits = async () => {
@@ -426,10 +458,38 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
                     </div>
                   ))}
                 </div>
+                {editing && (
+                  <button
+                    onClick={() => addEditSet(name)}
+                    className="mt-2 w-full border border-dashed border-border rounded-lg py-1.5 flex items-center justify-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                  >
+                    <MaterialIcon icon="add" className="text-[14px]" />
+                    הוסף סט
+                  </button>
+                )}
               </div>
             );
           })}
+
+          {editing && (
+            <button
+              onClick={() => setAddingExercise(true)}
+              className="w-full border border-dashed border-border rounded-xl py-3 flex items-center justify-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+            >
+              <MaterialIcon icon="add" className="text-[18px]" />
+              הוסף תרגיל
+            </button>
+          )}
         </div>
+      )}
+
+      {addingExercise && (
+        <SwapExerciseModal
+          title="הוסף תרגיל"
+          excludeNames={Object.keys(grouped)}
+          onSelect={handleAddExercise}
+          onClose={() => setAddingExercise(false)}
+        />
       )}
     </div>
   );
