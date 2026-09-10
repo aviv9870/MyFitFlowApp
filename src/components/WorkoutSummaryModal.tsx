@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import PersonalRecords from "@/components/PersonalRecords";
 import SwapExerciseModal from "@/components/SwapExerciseModal";
+import { parseReps, parseWeight, repsInputProps, weightInputProps } from "@/lib/setInputs";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -22,6 +23,10 @@ interface SetLog {
   weight: number;
   reps: number;
   exercise_order?: number | null;
+  // Carried through edits so re-saved sets keep the workout's date. Rows
+  // re-inserted without it default to now(), which silently moved an edited
+  // past workout into "this week" for every created_at-based chart.
+  created_at?: string;
 }
 
 interface Props {
@@ -59,7 +64,7 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     const fetchData = async () => {
       const { data } = await supabase
         .from("workout_set_logs")
-        .select("exercise_name, set_number, weight, reps, exercise_order")
+        .select("exercise_name, set_number, weight, reps, exercise_order, created_at")
         .eq("session_id", sessionId)
         .order("exercise_order", { ascending: true, nullsFirst: false })
         .order("set_number");
@@ -81,6 +86,11 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     if (!grouped[s.exercise_name]) grouped[s.exercise_name] = [];
     grouped[s.exercise_name].push(s);
   });
+  // Inputs map back to their row by identity, not position. Positional mapping
+  // only holds while each exercise's sets are contiguous and in grouped order;
+  // sets that share an exercise_order come back interleaved by set_number, and
+  // an edit would then land on a different exercise's row.
+  const rowIndex = new Map(displaySets.map((s, i) => [s, i] as const));
 
   const totalVolume = displaySets.reduce((a, s) => a + s.weight * s.reps, 0);
   const m = Math.floor(duration / 60);
@@ -108,24 +118,22 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     setEditSets(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s));
   };
 
-  // The rows of one exercise have to stay contiguous in editSets: the table
-  // below walks the grouped exercises with a running index to map each input
-  // back to its row, so a set inserted anywhere else would edit the wrong row.
   const addEditSet = (exerciseName: string) => {
     setEditSets(prev => {
-      let lastIdx = -1;
-      prev.forEach((s, i) => { if (s.exercise_name === exerciseName) lastIdx = i; });
-      if (lastIdx === -1) return prev;
-      const last = prev[lastIdx];
-      const next = [...prev];
-      next.splice(lastIdx + 1, 0, {
-        exercise_name: exerciseName,
-        set_number: last.set_number + 1,
-        weight: last.weight,
-        reps: last.reps,
-        exercise_order: last.exercise_order ?? null,
-      });
-      return next;
+      const siblings = prev.filter(s => s.exercise_name === exerciseName);
+      const last = siblings[siblings.length - 1];
+      if (!last) return prev;
+      return [
+        ...prev,
+        {
+          exercise_name: exerciseName,
+          set_number: Math.max(...siblings.map(s => s.set_number)) + 1,
+          weight: last.weight,
+          reps: last.reps,
+          exercise_order: last.exercise_order ?? null,
+          created_at: last.created_at ?? completedAt,
+        },
+      ];
     });
   };
 
@@ -134,46 +142,35 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     const maxOrder = editSets.reduce((m, s) => Math.max(m, s.exercise_order ?? 0), -1);
     setEditSets(prev => [
       ...prev,
-      { exercise_name: exercise.name, set_number: 1, weight: 0, reps: 0, exercise_order: maxOrder + 1 },
+      // Dated to the workout itself, not to today - a set added to last week's
+      // session must not count toward this week's analytics.
+      { exercise_name: exercise.name, set_number: 1, weight: 0, reps: 0, exercise_order: maxOrder + 1, created_at: completedAt },
     ]);
   };
 
   const saveEdits = async () => {
     if (!user || saving) return;
-    setSaving(true);
-    const backup = [...sets];
-    try {
-      const inserts = editSets.filter(s => s.reps > 0).map(s => ({
-        session_id: sessionId,
-        user_id: user.id,
+    const rows = editSets
+      .filter(s => s.reps > 0)
+      .map(s => ({
         exercise_name: s.exercise_name,
         set_number: s.set_number,
         weight: s.weight,
-        reps: s.reps,
+        reps: Math.trunc(s.reps),
         exercise_order: s.exercise_order ?? null,
+        created_at: s.created_at ?? completedAt,
       }));
 
-      const { error: delErr } = await supabase.from("workout_set_logs").delete().eq("session_id", sessionId);
-      if (delErr) throw delErr;
-
-      if (inserts.length > 0) {
-        const { error: insErr } = await supabase.from("workout_set_logs").insert(inserts);
-        if (insErr) {
-          // Restore original rows to avoid permanent data loss
-          await supabase.from("workout_set_logs").insert(
-            backup.map(s => ({
-              session_id: sessionId,
-              user_id: user.id,
-              exercise_name: s.exercise_name,
-              set_number: s.set_number,
-              weight: s.weight,
-              reps: s.reps,
-              exercise_order: s.exercise_order ?? null,
-            }))
-          );
-          throw insErr;
-        }
-      }
+    setSaving(true);
+    try {
+      // One atomic call. The old client-side delete-then-insert left the
+      // workout with no sets whenever the insert failed after the delete
+      // succeeded, and its restore re-dated every set to now().
+      const { error: replaceErr } = await supabase.rpc("replace_session_set_logs", {
+        p_session_id: sessionId,
+        p_rows: rows,
+      });
+      if (replaceErr) throw replaceErr;
 
       const newDurationSeconds = Math.max(0, editMinutes) * 60;
       if (newDurationSeconds !== duration) {
@@ -186,11 +183,12 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
         onUpdated?.(newDurationSeconds);
       }
 
-      setSets(editSets.filter(s => s.reps > 0));
+      setSets(rows);
       setEditing(false);
       toast.success("האימון עודכן בהצלחה");
     } catch (err) {
-      toast.error("שגיאה בשמירה");
+      console.error(err);
+      toast.error("שגיאה בשמירה", { description: (err as { message?: string })?.message });
     } finally {
       setSaving(false);
     }
@@ -267,8 +265,6 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
     }
   };
 
-  // Flat index for editSets
-  let flatIdx = 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-xl flex flex-col overflow-y-auto">
@@ -417,8 +413,6 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
       ) : (
         <div className="px-4 space-y-3 pb-24">
           {Object.entries(grouped).map(([name, exerciseSets]) => {
-            const startIdx = flatIdx;
-            flatIdx += exerciseSets.length;
             return (
               <div key={name} className="glass-card p-3">
                 <h4 className="text-sm font-semibold text-foreground mb-2">{name}</h4>
@@ -436,14 +430,18 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
                         <>
                           <input
                             type="number"
-                            value={s.weight}
-                            onChange={(e) => updateEditSet(startIdx + i, "weight", Number(e.target.value))}
+                            {...weightInputProps}
+                            placeholder="ק״ג"
+                            value={s.weight || ""}
+                            onChange={(e) => updateEditSet(rowIndex.get(s) ?? -1, "weight", parseWeight(e.target.value))}
                             className="flex-1 bg-secondary/50 border border-border rounded px-1 py-0.5 text-xs text-foreground w-12"
                           />
                           <input
                             type="number"
-                            value={s.reps}
-                            onChange={(e) => updateEditSet(startIdx + i, "reps", Number(e.target.value))}
+                            {...repsInputProps}
+                            placeholder="חזרות"
+                            value={s.reps || ""}
+                            onChange={(e) => updateEditSet(rowIndex.get(s) ?? -1, "reps", parseReps(e.target.value))}
                             className="flex-1 bg-secondary/50 border border-border rounded px-1 py-0.5 text-xs text-foreground w-12"
                           />
                           <span className="flex-1 text-primary">{s.weight * s.reps}</span>

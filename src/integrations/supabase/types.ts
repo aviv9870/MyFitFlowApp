@@ -527,6 +527,10 @@ export type Database = {
         Args: { p_plan_id: string; p_rows: Json }
         Returns: undefined
       }
+      replace_session_set_logs: {
+        Args: { p_rows: Json; p_session_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

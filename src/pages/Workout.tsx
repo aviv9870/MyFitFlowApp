@@ -10,6 +10,7 @@ import ExerciseHistory from "@/components/ExerciseHistory";
 import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
 import { getPlanExerciseExtras } from "@/services/workoutExtrasLocal";
+import { parseReps, parseWeight, repsInputProps, weightInputProps } from "@/lib/setInputs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -455,7 +456,9 @@ const Workout = () => {
             exercise_name: ex.name,
             set_number: idx + 1,
             weight: s.weight,
-            reps: s.reps,
+            // Integer column; a workout restored from before reps inputs were
+            // integer-only could still hold a decimal in localStorage.
+            reps: Math.trunc(s.reps),
             exercise_order: orderMap[ex.name] ?? 999,
           }))
       );
@@ -505,32 +508,33 @@ const Workout = () => {
   const saveEditedWorkout = async () => {
     if (!user || !doneSessionId) return;
     try {
-      const setLogs = exercises.flatMap((ex, exIdx) =>
+      // created_at is omitted: the RPC dates each row to the session's
+      // completed_at, so these sets stay on the day the workout happened.
+      const rows = exercises.flatMap((ex, exIdx) =>
         ex.sets
           .filter((s) => s.reps > 0)
           .map((s, idx) => ({
-            session_id: doneSessionId,
-            user_id: user.id,
             exercise_name: ex.name,
             set_number: idx + 1,
             weight: s.weight,
-            reps: s.reps,
+            reps: Math.trunc(s.reps),
             exercise_order: exIdx,
           }))
       );
 
-      const { error: delErr } = await supabase.from("workout_set_logs").delete().eq("session_id", doneSessionId);
-      if (delErr) throw delErr;
-
-      if (setLogs.length > 0) {
-        const { error: insErr } = await supabase.from("workout_set_logs").insert(setLogs);
-        if (insErr) throw insErr;
-      }
+      // Atomic replace. This used to delete then insert with no restore at
+      // all, so a failed insert here wiped every set in the workout.
+      const { error: replaceErr } = await supabase.rpc("replace_session_set_logs", {
+        p_session_id: doneSessionId,
+        p_rows: rows,
+      });
+      if (replaceErr) throw replaceErr;
 
       toast.success("השינויים נשמרו!");
       setEditingDone(false);
-    } catch {
-      toast.error("שגיאה בשמירה");
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בשמירה", { description: (err as { message?: string })?.message });
     }
   };
 
@@ -597,8 +601,8 @@ const Workout = () => {
                     <span className="w-8 text-muted-foreground">{i + 1}</span>
                     {editingDone ? (
                       <>
-                        <input type="number" value={s.weight || ""} onChange={(e) => updateSet(s.exIdx, s.setIdx, "weight", Number(e.target.value))} className="flex-1 bg-secondary/50 border border-border rounded-lg px-2 py-1 text-center text-xs" />
-                        <input type="number" value={s.reps || ""} onChange={(e) => updateSet(s.exIdx, s.setIdx, "reps", Number(e.target.value))} className="flex-1 bg-secondary/50 border border-border rounded-lg px-2 py-1 text-center text-xs" />
+                        <input type="number" {...weightInputProps} placeholder="ק״ג" value={s.weight || ""} onChange={(e) => updateSet(s.exIdx, s.setIdx, "weight", parseWeight(e.target.value))} className="flex-1 bg-secondary/50 border border-border rounded-lg px-2 py-1 text-center text-xs" />
+                        <input type="number" {...repsInputProps} placeholder="חזרות" value={s.reps || ""} onChange={(e) => updateSet(s.exIdx, s.setIdx, "reps", parseReps(e.target.value))} className="flex-1 bg-secondary/50 border border-border rounded-lg px-2 py-1 text-center text-xs" />
                       </>
                     ) : (
                       <>
@@ -746,10 +750,10 @@ const Workout = () => {
                       <div className="flex-1 relative">
                         <input
                           type="number"
-                          inputMode="decimal"
+                          {...weightInputProps}
                           placeholder={set.prevWeight !== null ? `${set.prevWeight}` : "ק״ג"}
                           value={set.weight || ""}
-                          onChange={(e) => updateSet(exIdx, setIdx, "weight", Number(e.target.value))}
+                          onChange={(e) => updateSet(exIdx, setIdx, "weight", parseWeight(e.target.value))}
                           disabled={set.locked}
                           className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all scroll-mt-24 ${
                             set.locked
@@ -766,10 +770,10 @@ const Workout = () => {
                       <div className="flex-1 relative">
                         <input
                           type="number"
-                          inputMode="numeric"
+                          {...repsInputProps}
                           placeholder={set.prevReps !== null ? `${set.prevReps}` : exercise.repRange}
                           value={set.reps || ""}
-                          onChange={(e) => updateSet(exIdx, setIdx, "reps", Number(e.target.value))}
+                          onChange={(e) => updateSet(exIdx, setIdx, "reps", parseReps(e.target.value))}
                           disabled={set.locked}
                           className={`w-full border rounded-xl py-3 px-3 text-base text-foreground text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary transition-all scroll-mt-24 ${
                             set.locked
