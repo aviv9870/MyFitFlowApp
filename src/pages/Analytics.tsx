@@ -1,13 +1,18 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import TrendChart from "@/components/charts/TrendChart";
 import DistributionBars from "@/components/charts/DistributionBars";
 import { bucketByDay, bucketByMonth, safeNumber, safeDiv, type TrendPoint } from "@/lib/chartData";
-import { canonicalMuscleGroup, muscleColor, formatSets, SYNERGIST_MAP } from "@/lib/muscleGroups";
+import { canonicalMuscleGroup, muscleColor, formatSets, tallyMuscleWork, tallyRegionWeek, type MuscleWork } from "@/lib/muscleGroups";
+import { regionsForExercise } from "@/lib/exerciseRegions";
+import { DEFAULT_WEEKLY_SET_RANGE, type RegionGroup } from "@/components/3d/regions";
 import { toast } from "sonner";
 import { useGender } from "@/hooks/useGender";
+
+// three.js and the 5 MB model load only when this page renders the map.
+const MuscleMap3D = lazy(() => import("@/components/3d/MuscleMap3D"));
 
 type RangeKey = "week" | "month" | "year";
 
@@ -92,7 +97,11 @@ const Analytics = () => {
   const [showMuscleBars, setShowMuscleBars] = useState(false);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
-  const [muscleWeeklySetCounts, setMuscleWeeklySetCounts] = useState<Record<string, number>>({});
+  const [muscleWeekly, setMuscleWeekly] = useState<Record<string, MuscleWork>>({});
+  const [regionWeek, setRegionWeek] = useState<{
+    regions: Partial<Record<RegionGroup, MuscleWork>>;
+    offModelSets: number;
+  }>({ regions: {}, offModelSets: 0 });
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
 
   useEffect(() => {
@@ -277,34 +286,39 @@ const Analytics = () => {
 
     const { data: setLogs } = await supabase
       .from("workout_set_logs")
-      .select("exercise_name, created_at")
+      .select("exercise_name, created_at, weight, reps")
       .eq("user_id", user.id)
       .gte("created_at", thirtyDaysAgo.toISOString());
 
-    const { data: exercises } = await supabase.from("exercises").select("name, muscle_group");
+    const [{ data: exercises }, { data: kinesiology, error: kinesiologyError }] = await Promise.all([
+      supabase.from("exercises").select("id, name, muscle_group"),
+      supabase.from("pz_exercise_kinesiology").select("exercise_id, muscle_contributions"),
+    ]);
+    // Without kinesiology the 3D map falls back to muscle_group; the bars don't use it.
+    if (kinesiologyError) console.error(kinesiologyError);
     const exerciseGroupMap = new Map(
       (exercises ?? []).map((e) => [e.name, canonicalMuscleGroup(e.muscle_group ?? "אחר")])
     );
+    const exerciseIdMap = new Map((exercises ?? []).map((e) => [e.name, e.id]));
+    const contributionsById = new Map(
+      (kinesiology ?? []).map((k) => [k.exercise_id, k.muscle_contributions as Record<string, number>])
+    );
 
-    const addCredit = (target: Record<string, number>, group: string, amount: number) => {
-      target[group] = (target[group] ?? 0) + amount;
-      SYNERGIST_MAP[group]?.forEach(({ muscle, factor }) => {
-        target[muscle] = (target[muscle] ?? 0) + amount * factor;
-      });
-    };
-
-    const counts: Record<string, number> = {};
-    const weeklyCounts: Record<string, number> = {};
-    (setLogs ?? []).forEach((log) => {
-      const group = exerciseGroupMap.get(log.exercise_name) ?? "אחר";
-      addCredit(counts, group, 1);
-      if (new Date(log.created_at) >= startOfWeek) {
-        addCredit(weeklyCounts, group, 1);
-      }
-    });
-
-    setMuscleSetCounts(counts);
-    setMuscleWeeklySetCounts(weeklyCounts);
+    const { sets, weekly } = tallyMuscleWork(
+      setLogs ?? [],
+      (name) => exerciseGroupMap.get(name) ?? "אחר",
+      startOfWeek,
+    );
+    setMuscleSetCounts(sets);
+    setMuscleWeekly(weekly);
+    setRegionWeek(
+      tallyRegionWeek(
+        setLogs ?? [],
+        (name) =>
+          regionsForExercise(contributionsById, exerciseIdMap.get(name), exerciseGroupMap.get(name) ?? "אחר"),
+        startOfWeek,
+      ),
+    );
   };
 
   const muscleBars = useMemo(() => {
@@ -315,10 +329,10 @@ const Analytics = () => {
         name,
         pct: safeDiv(count, totalSets) * 100,
         color: muscleColor(name),
-        detail: `${formatSets(muscleWeeklySetCounts[name] ?? 0)} סטים השבוע`,
+        detail: `${formatSets(muscleWeekly[name]?.sets ?? 0)} סטים השבוע`,
       }))
       .sort((a, b) => b.pct - a.pct);
-  }, [muscleSetCounts, muscleWeeklySetCounts]);
+  }, [muscleSetCounts, muscleWeekly]);
 
   const fetchAiInsights = async () => {
     if (!user || loadingAi) return;
@@ -363,6 +377,28 @@ const Analytics = () => {
     <div className="min-h-screen bg-background pb-24 px-4 pt-6 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold neon-text">PERFORMANCE ANALYTICS</h1>
+      </div>
+
+      {/* This week's load per muscle on a 3D body, from the same set logs as the distribution bars */}
+      <div className="glass-card p-4 mb-3.5">
+        <h3 className="text-sm font-semibold text-foreground mb-1">מפת עומס שבועית</h3>
+        <p className="text-[11.5px] text-muted-foreground mb-2">
+          השבוע · מינימום אפקטיבי {DEFAULT_WEEKLY_SET_RANGE.mev} סטים, מומלץ עד {DEFAULT_WEEKLY_SET_RANGE.max} ·
+          נגיעה בשריר מציגה פירוט
+        </p>
+        <Suspense
+          fallback={
+            <div className="h-[420px] flex items-center justify-center text-xs text-muted-foreground">
+              טוען מפת שרירים…
+            </div>
+          }
+        >
+          <MuscleMap3D
+            weekly={regionWeek.regions}
+            offModelSets={regionWeek.offModelSets}
+            range={DEFAULT_WEEKLY_SET_RANGE}
+          />
+        </Suspense>
       </div>
 
       {/* Muscle group distribution: a one-line stacked bar until expanded to the full

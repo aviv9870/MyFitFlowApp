@@ -1,3 +1,6 @@
+import { safeNumber } from "@/lib/chartData";
+import type { RegionGroup } from "@/components/3d/regions";
+
 // Shared muscle-group naming/coloring so Analytics and CoachDashboard's
 // distribution charts render identically instead of drifting apart (the
 // coach-side copy used to have its own map with a leftover yellow and no
@@ -51,4 +54,76 @@ export const SYNERGIST_MAP: Record<string, { muscle: string; factor: number }[]>
 export const formatSets = (n: number) => {
   const rounded = Math.round(n * 2) / 2;
   return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
+};
+
+export interface MuscleWork {
+  sets: number;
+  reps: number;
+  volumeKg: number;
+}
+
+interface TalliedSetLog {
+  exercise_name: string;
+  created_at: string;
+  weight?: number | null;
+  reps?: number | null;
+}
+
+// One pass over set logs: set credit per group for the whole window (the
+// distribution bars) and this week's sets/reps/volume (the bars' detail and
+// the 3D load map), both with the same synergist credit so they never disagree.
+export const tallyMuscleWork = (
+  logs: TalliedSetLog[],
+  groupOf: (exerciseName: string) => string,
+  weekStart: Date,
+) => {
+  const sets: Record<string, number> = {};
+  const weekly: Record<string, MuscleWork> = {};
+  for (const log of logs) {
+    const group = groupOf(log.exercise_name);
+    const reps = safeNumber(log.reps);
+    const volume = safeNumber(log.weight) * reps;
+    const thisWeek = new Date(log.created_at) >= weekStart;
+    const credit = (muscle: string, factor: number) => {
+      sets[muscle] = (sets[muscle] ?? 0) + factor;
+      if (!thisWeek) return;
+      if (!weekly[muscle]) weekly[muscle] = { sets: 0, reps: 0, volumeKg: 0 };
+      weekly[muscle].sets += factor;
+      weekly[muscle].reps += reps * factor;
+      weekly[muscle].volumeKg += volume * factor;
+    };
+    credit(group, 1);
+    SYNERGIST_MAP[group]?.forEach(({ muscle, factor }) => credit(muscle, factor));
+  }
+  return { sets, weekly };
+};
+
+// This week's work per 3D-model region. regionsOf gives an exercise's region
+// shares (lib/exerciseRegions). A set whose main muscle has no region on the
+// model (e.g. shrugs -> traps) still credits its other regions, and is counted
+// in offModelSets so it stays visible instead of silently dropping.
+export const tallyRegionWeek = (
+  logs: TalliedSetLog[],
+  regionsOf: (
+    exerciseName: string,
+  ) => { shares: Partial<Record<RegionGroup, number>>; primaryOnModel: boolean } | null,
+  weekStart: Date,
+) => {
+  const regions: Partial<Record<RegionGroup, MuscleWork>> = {};
+  let offModelSets = 0;
+  for (const log of logs) {
+    if (new Date(log.created_at) < weekStart) continue;
+    const mapped = regionsOf(log.exercise_name);
+    if (!mapped || !mapped.primaryOnModel) offModelSets += 1;
+    const shares = Object.entries(mapped?.shares ?? {}) as [RegionGroup, number][];
+    const reps = safeNumber(log.reps);
+    const volume = safeNumber(log.weight) * reps;
+    for (const [region, share] of shares) {
+      if (!regions[region]) regions[region] = { sets: 0, reps: 0, volumeKg: 0 };
+      regions[region].sets += share;
+      regions[region].reps += reps * share;
+      regions[region].volumeKg += volume * share;
+    }
+  }
+  return { regions, offModelSets };
 };
