@@ -137,10 +137,14 @@ const Analytics = () => {
       const previousTotal = sumVolume(previous);
       const deltaPct = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : null;
 
+      // T is pinned to the row type: left to inference it's taken from
+      // volumeOf's narrower { weight, reps } parameter, and row.created_at
+      // then fails to typecheck.
+      type SetRow = (typeof current)[number];
       const points =
         cfg.bucket === "day"
-          ? bucketByDay(current, (row) => row.created_at, volumeOf, windowStart, now)
-          : bucketByMonth(current, (row) => row.created_at, volumeOf, 12, now);
+          ? bucketByDay<SetRow>(current, (row) => row.created_at, volumeOf, windowStart, now)
+          : bucketByMonth<SetRow>(current, (row) => row.created_at, volumeOf, 12, now);
 
       setVolumeTrend({ points, total: Math.round(currentTotal), deltaPct });
     } finally {
