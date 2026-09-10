@@ -89,6 +89,7 @@ const Analytics = () => {
   const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [showTrendChart, setShowTrendChart] = useState(false);
+  const [showMuscleBars, setShowMuscleBars] = useState(false);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
   const [muscleWeeklySetCounts, setMuscleWeeklySetCounts] = useState<Record<string, number>>({});
@@ -364,17 +365,53 @@ const Analytics = () => {
         <h1 className="text-lg font-bold neon-text">PERFORMANCE ANALYTICS</h1>
       </div>
 
-      {/* Muscle group distribution, with the volume trend chart tucked behind an expand toggle */}
+      {/* Muscle group distribution: a one-line stacked bar until expanded to the full
+          ranked list. The volume trend chart sits behind its own toggle below. */}
       <div className="glass-card p-4 mb-3.5">
-        <h3 className="text-sm font-semibold text-foreground mb-1">התפלגות אימונים לפי שרירים</h3>
-        <p className="text-[11.5px] text-muted-foreground mb-4">30 הימים האחרונים · לפי סטים</p>
+        <button
+          type="button"
+          onClick={() => setShowMuscleBars((open) => !open)}
+          aria-expanded={showMuscleBars}
+          className="w-full flex items-start justify-between gap-2 text-right"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-foreground mb-1">התפלגות אימונים לפי שרירים</span>
+            <span className="block text-[11.5px] text-muted-foreground">30 הימים האחרונים · לפי סטים</span>
+          </span>
+          <MaterialIcon icon={showMuscleBars ? "expand_less" : "expand_more"} className="text-muted-foreground text-[20px]" />
+        </button>
 
-        <DistributionBars
-          items={muscleBars}
-          emptyTitle="אין נתוני אימונים ב-30 ימים אחרונים"
-          onToggle={(name) => setExpandedMuscle((prev) => (prev === name ? null : name))}
-          expandedName={expandedMuscle}
-        />
+        {showMuscleBars ? (
+          <div className="mt-4">
+            <DistributionBars
+              items={muscleBars}
+              emptyTitle="אין נתוני אימונים ב-30 ימים אחרונים"
+              onToggle={(name) => setExpandedMuscle((prev) => (prev === name ? null : name))}
+              expandedName={expandedMuscle}
+            />
+          </div>
+        ) : muscleBars.length > 0 ? (
+          <button type="button" onClick={() => setShowMuscleBars(true)} className="w-full mt-3 text-right">
+            <span className="flex h-2 rounded-full overflow-hidden bg-secondary/40">
+              {muscleBars.map((m) => (
+                <span key={m.name} className="h-full" style={{ width: `${m.pct}%`, backgroundColor: m.color }} />
+              ))}
+            </span>
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+              {muscleBars.slice(0, 3).map((m) => (
+                <span key={m.name} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.color }} />
+                  {m.name} {m.pct.toFixed(0)}%
+                </span>
+              ))}
+              {muscleBars.length > 3 && (
+                <span className="text-[11px] text-muted-foreground">+{muscleBars.length - 3} נוספים</span>
+              )}
+            </span>
+          </button>
+        ) : (
+          <p className="text-[11px] text-muted-foreground mt-3">אין נתוני אימונים ב-30 ימים אחרונים</p>
+        )}
 
         {/* Expand to reveal the volume trend chart */}
         <button
