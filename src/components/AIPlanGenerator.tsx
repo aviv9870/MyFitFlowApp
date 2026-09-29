@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
+import { aiErrorMessage } from "@/lib/aiErrors";
 
 interface Props {
   onPlanCreated: () => void;
@@ -75,9 +76,9 @@ const AIPlanGenerator = ({ onPlanCreated, onCancel }: Props) => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setResult(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "שגיאה ביצירת תוכנית");
+      toast.error(aiErrorMessage(err, "שגיאה ביצירת תוכנית"));
     } finally {
       setLoading(false);
     }
