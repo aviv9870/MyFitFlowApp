@@ -10,7 +10,8 @@ import { canonicalMuscleGroup, muscleColor, formatSets, tallyMuscleWork, tallyRe
 import { regionsForExercise } from "@/lib/exerciseRegions";
 import { DEFAULT_WEEKLY_SET_RANGE, type RegionGroup } from "@/components/3d/regions";
 import { toast } from "sonner";
-import { aiErrorMessage } from "@/lib/aiErrors";
+import { analyzeTraining, type AnalysisSet } from "@/domain/trainingInsights";
+import { ANALYSIS_DAYS } from "@/domain/trainingKnowledge";
 import { useGender } from "@/hooks/useGender";
 
 // three.js and the 5 MB model load only when this page renders the map.
@@ -85,12 +86,11 @@ const Analytics = () => {
     drivers: [],
   });
 
-  const [aiInsights, setAiInsights] = useState<{
-    training_qualities?: { quality: string; verdict: string; detail: string }[];
-    insights: string[];
-    recommendation: string;
-  } | null>(null);
-  const [loadingAi, setLoadingAi] = useState(false);
+  // Inputs for the local analysis engine (domain/trainingInsights), which
+  // replaced the LLM call on this screen.
+  const [analysisSets, setAnalysisSets] = useState<AnalysisSet[]>([]);
+  const [sessionDates, setSessionDates] = useState<string[]>([]);
+  const [exerciseGroups, setExerciseGroups] = useState<Record<string, string>>({});
 
   const [range, setRange] = useState<RangeKey>("week");
   const [volumeTrend, setVolumeTrend] = useState<VolumeTrend>({ points: [], total: 0, deltaPct: null });
@@ -183,6 +183,8 @@ const Analytics = () => {
       .gte("completed_at", thirtyDaysAgo.toISOString())
       .order("completed_at", { ascending: false });
 
+
+    setSessionDates((recentSessions ?? []).map((sess) => sess.completed_at).filter((d): d is string => !!d));
 
     const recentCount = recentSessions?.length ?? 0;
     const avgDur = recentSessions?.reduce((a, s) => a + s.duration_seconds, 0) ?? 0;
@@ -327,6 +329,15 @@ const Analytics = () => {
     );
     setMuscleSetCounts(sets);
     setMuscleWeekly(weekly);
+    setExerciseGroups(Object.fromEntries(exerciseGroupMap));
+    setAnalysisSets(
+      (setLogs ?? []).map((l) => ({
+        exercise_name: l.exercise_name,
+        weight: safeNumber(l.weight),
+        reps: safeNumber(l.reps),
+        created_at: l.created_at,
+      })),
+    );
     setRegionWeek(
       tallyRegionWeek(
         setLogs ?? [],
@@ -350,42 +361,20 @@ const Analytics = () => {
       .sort((a, b) => b.pct - a.pct);
   }, [muscleSetCounts, muscleWeekly]);
 
-  const fetchAiInsights = async () => {
-    if (!user || loadingAi) return;
-    setLoadingAi(true);
-    try {
-      const { data: history } = await supabase
-        .from("workout_sessions")
-        .select("plan_name, duration_seconds, completed_at")
-        .eq("user_id", user.id)
-        .order("completed_at", { ascending: false })
-        .limit(20);
-
-      const { data: sets } = await supabase
-        .from("workout_set_logs")
-        .select("exercise_name, weight, reps, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        // Rep-range distribution is the basis of the training-quality
-        // assessment, so it needs a real sample, not just the last few sets -
-        // but the prompt still has to generate inside the request budget.
-        .limit(150);
-
-      const genderContext = gender === "female" ? "פני אל המשתמשת בלשון נקבה." : "פנה אל המשתמש בלשון זכר.";
-      const { data, error } = await supabase.functions.invoke("ai-workout", {
-        body: { type: "analyze", history: { sessions: history, sets }, genderContext },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setAiInsights(data);
-    } catch (err) {
-      console.error(err);
-      toast.error(aiErrorMessage(err));
-    } finally {
-      setLoadingAi(false);
-    }
-  };
+  // The screen's analysis, computed locally from the trainee's own numbers.
+  // It replaced an LLM call that depended on a paid provider chain: same card,
+  // but instant, free, and the same answer every time for the same data.
+  const analysis = useMemo(
+    () =>
+      analyzeTraining({
+        sets: analysisSets,
+        sessionDates,
+        weeklySets: Object.fromEntries(Object.entries(muscleWeekly).map(([m, w]) => [m, w.sets])),
+        muscleOf: (name) => exerciseGroups[name] ?? "אחר",
+        gender,
+      }),
+    [analysisSets, sessionDates, muscleWeekly, exerciseGroups, gender],
+  );
 
   const rangeCfg = RANGE_CONFIG[range];
 
@@ -636,53 +625,44 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* AI Insights */}
+      {/* Training analysis, computed locally from the trainee's own numbers */}
       <div className="glass-card p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <MaterialIcon icon="psychology" className="text-primary text-[20px]" />
-            <h3 className="text-sm font-semibold text-foreground">תובנות AI</h3>
-          </div>
-          <button onClick={fetchAiInsights} disabled={loadingAi} className="text-xs text-primary flex items-center gap-1">
-            <MaterialIcon icon={loadingAi ? "hourglass_top" : "refresh"} className={`text-[14px] ${loadingAi ? "animate-spin" : ""}`} />
-            {loadingAi ? "מנתח..." : "נתח"}
-          </button>
+        <div className="flex items-center gap-2 mb-1">
+          <MaterialIcon icon="psychology" className="text-primary text-[20px]" />
+          <h3 className="text-sm font-semibold text-foreground">ניתוח האימונים שלך</h3>
         </div>
+        <p className="text-[11.5px] text-muted-foreground mb-3">
+          מחושב מהנתונים שלך לפי עקרונות אימון · {ANALYSIS_DAYS} הימים האחרונים
+        </p>
 
-        {aiInsights ? (
-          <div className="space-y-2">
-            {aiInsights.training_qualities && aiInsights.training_qualities.length > 0 && (
-              <div className="bg-secondary/50 rounded-xl p-3 space-y-2.5">
-                <span className="text-xs font-semibold text-primary">איכויות אימון</span>
-                {aiInsights.training_qualities.map((q, i) => (
-                  <div key={i}>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs font-semibold text-foreground">{q.quality}</span>
-                      <span className="text-[11px] text-primary shrink-0">{q.verdict}</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{q.detail}</p>
+        <div className="space-y-2">
+          {analysis.training_qualities.length > 0 && (
+            <div className="bg-secondary/50 rounded-xl p-3 space-y-2.5">
+              <span className="text-xs font-semibold text-primary">איכויות אימון</span>
+              {analysis.training_qualities.map((q) => (
+                <div key={q.quality}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-semibold text-foreground">{q.quality}</span>
+                    <span className="text-[11px] text-primary shrink-0">{q.verdict}</span>
                   </div>
-                ))}
-              </div>
-            )}
-            {aiInsights.insights.map((insight, i) => (
-              <div key={i} className="bg-secondary/50 rounded-xl p-3">
-                <div className="flex items-start gap-2">
-                  <MaterialIcon icon="insights" className="text-primary text-[16px] mt-0.5" />
-                  <p className="text-xs text-muted-foreground">{insight}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{q.detail}</p>
                 </div>
-              </div>
-            ))}
-            <div className="bg-primary/10 rounded-xl p-3">
-              <span className="text-xs font-semibold text-primary">המלצה</span>
-              <p className="text-xs text-foreground mt-1">{aiInsights.recommendation}</p>
+              ))}
             </div>
+          )}
+          {analysis.insights.map((insight, i) => (
+            <div key={i} className="bg-secondary/50 rounded-xl p-3">
+              <div className="flex items-start gap-2">
+                <MaterialIcon icon="insights" className="text-primary text-[16px] mt-0.5" />
+                <p className="text-xs text-muted-foreground">{insight}</p>
+              </div>
+            </div>
+          ))}
+          <div className="bg-primary/10 rounded-xl p-3">
+            <span className="text-xs font-semibold text-primary">המלצה</span>
+            <p className="text-xs text-foreground mt-1">{analysis.recommendation}</p>
           </div>
-        ) : (
-          <div className="bg-secondary/50 rounded-xl p-3 text-center">
-            <p className="text-xs text-muted-foreground">לחץ ״נתח״ לקבלת תובנות AI מותאמות אישית</p>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
