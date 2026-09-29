@@ -6,6 +6,7 @@ import PersonalRecords from "@/components/PersonalRecords";
 import SwapExerciseModal from "@/components/SwapExerciseModal";
 import { parseReps, parseWeight, repsInputProps, weightInputProps } from "@/lib/setInputs";
 import { toast } from "sonner";
+import { aiErrorMessage } from "@/lib/aiErrors";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -257,9 +258,9 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setAiAnalysis(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "שגיאה בניתוח AI");
+      toast.error(aiErrorMessage(err));
     } finally {
       setLoadingAi(false);
     }
@@ -322,8 +323,10 @@ const WorkoutSummaryModal = ({ sessionId, planName, durationSeconds, completedAt
                   <input
                     type="number"
                     min={0}
-                    value={editMinutes}
-                    onChange={(e) => setEditMinutes(Number(e.target.value))}
+                    inputMode="numeric"
+                    value={editMinutes || ""}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setEditMinutes(Math.max(0, Math.trunc(Number(e.target.value)) || 0))}
                     className="w-12 bg-secondary/50 border border-border rounded px-1 py-0.5 text-xs text-foreground"
                   />
                   <span className="text-sm text-foreground">דק׳</span>
