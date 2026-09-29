@@ -25,21 +25,21 @@ describe("3D muscle regions", () => {
 });
 
 describe("weekly set range", () => {
-  it("is a minimum effective 8 and recommended up to 20 sets", () => {
-    expect(range).toEqual({ mev: 8, max: 20 });
+  it("is a minimum effective 8 and recommended up to 25 sets", () => {
+    expect(range).toEqual({ mev: 8, max: 25 });
   });
 
   it("puts set counts in the right zone, with both limits inside the recommended range", () => {
     expect(loadZone(0, range)).toBe("none");
     expect(loadZone(7.5, range)).toBe("below");
     expect(loadZone(8, range)).toBe("effective");
-    expect(loadZone(20, range)).toBe("effective");
-    expect(loadZone(20.5, range)).toBe("above");
+    expect(loadZone(25, range)).toBe("effective");
+    expect(loadZone(25.5, range)).toBe("above");
   });
 
   it("colors each zone distinctly and stays constant above the range", () => {
-    const colors = [0, 4, 12, 30].map((sets) => loadColor(sets, range));
+    const colors = [0, 4, 12, 40].map((sets) => loadColor(sets, range));
     expect(new Set(colors).size).toBe(4);
-    expect(loadColor(25, range)).toBe(loadColor(40, range));
+    expect(loadColor(30, range)).toBe(loadColor(40, range));
   });
 });

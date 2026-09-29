@@ -91,9 +91,39 @@ describe("tallyRegionWeek", () => {
       regionsOf,
       weekStart,
     );
-    expect(regions.Quad).toEqual({ sets: 1, reps: 10, volumeKg: 1000 });
-    expect(regions.Glute).toEqual({ sets: 0.5, reps: 5, volumeKg: 500 });
+    expect(regions.Quad).toEqual({
+      sets: 1,
+      reps: 10,
+      volumeKg: 1000,
+      byExercise: [{ name: "לחיצת רגליים במכונה", sets: 1, share: 1 }],
+    });
+    expect(regions.Glute).toEqual({
+      sets: 0.5,
+      reps: 5,
+      volumeKg: 500,
+      byExercise: [{ name: "לחיצת רגליים במכונה", sets: 0.5, share: 0.5 }],
+    });
     expect(offModelSets).toBe(0);
+  });
+
+  it("breaks a region's week down per exercise, direct work first", () => {
+    const { regions } = tallyRegionWeek(
+      [
+        { exercise_name: "פשיטת מרפקים בכבל", created_at: "2026-09-08T10:00:00", weight: 30, reps: 12 },
+        { exercise_name: "פשיטת מרפקים בכבל", created_at: "2026-09-08T10:05:00", weight: 30, reps: 12 },
+        { exercise_name: "לחיצת חזה", created_at: "2026-09-08T11:00:00", weight: 60, reps: 10 },
+      ],
+      (name: string) =>
+        name === "פשיטת מרפקים בכבל"
+          ? { shares: { Triceps: 1 }, primaryOnModel: true }
+          : { shares: { Chest: 1, Triceps: 0.5 }, primaryOnModel: true },
+      weekStart,
+    );
+    expect(regions.Triceps?.sets).toBe(2.5);
+    expect(regions.Triceps?.byExercise).toEqual([
+      { name: "פשיטת מרפקים בכבל", sets: 2, share: 1 },
+      { name: "לחיצת חזה", sets: 0.5, share: 0.5 },
+    ]);
   });
 
   it("counts sets whose main muscle is off the model while still crediting their other regions", () => {

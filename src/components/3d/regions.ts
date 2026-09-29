@@ -61,7 +61,7 @@ export interface WeeklySetRange {
 }
 
 // One range for every muscle, chosen by the product owner.
-export const DEFAULT_WEEKLY_SET_RANGE: WeeklySetRange = { mev: 8, max: 20 };
+export const DEFAULT_WEEKLY_SET_RANGE: WeeklySetRange = { mev: 8, max: 25 };
 
 export type LoadZone = "none" | "below" | "effective" | "above";
 

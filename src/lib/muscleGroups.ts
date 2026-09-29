@@ -102,6 +102,12 @@ export const tallyMuscleWork = (
 // shares (lib/exerciseRegions). A set whose main muscle has no region on the
 // model (e.g. shrugs -> traps) still credits its other regions, and is counted
 // in offModelSets so it stays visible instead of silently dropping.
+/** A region's week, plus which exercises produced it. */
+export interface RegionWork extends MuscleWork {
+  /** Credited sets per exercise, biggest first. `share` < 1 means indirect work. */
+  byExercise: { name: string; sets: number; share: number }[];
+}
+
 export const tallyRegionWeek = (
   logs: TalliedSetLog[],
   regionsOf: (
@@ -109,7 +115,10 @@ export const tallyRegionWeek = (
   ) => { shares: Partial<Record<RegionGroup, number>>; primaryOnModel: boolean } | null,
   weekStart: Date,
 ) => {
-  const regions: Partial<Record<RegionGroup, MuscleWork>> = {};
+  const regions: Partial<Record<RegionGroup, RegionWork>> = {};
+  // Per region, per exercise: credited sets and the share one set contributes,
+  // so the region card can explain "5.5 sets" as "3 direct + 2.5 indirect".
+  const perExercise: Partial<Record<RegionGroup, Map<string, { sets: number; share: number }>>> = {};
   let offModelSets = 0;
   for (const log of logs) {
     if (new Date(log.created_at) < weekStart) continue;
@@ -119,11 +128,24 @@ export const tallyRegionWeek = (
     const reps = safeNumber(log.reps);
     const volume = safeNumber(log.weight) * reps;
     for (const [region, share] of shares) {
-      if (!regions[region]) regions[region] = { sets: 0, reps: 0, volumeKg: 0 };
+      if (!regions[region]) regions[region] = { sets: 0, reps: 0, volumeKg: 0, byExercise: [] };
       regions[region].sets += share;
       regions[region].reps += reps * share;
       regions[region].volumeKg += volume * share;
+
+      if (!perExercise[region]) perExercise[region] = new Map();
+      const entry = perExercise[region].get(log.exercise_name) ?? { sets: 0, share };
+      entry.sets += share;
+      entry.share = Math.max(entry.share, share);
+      perExercise[region].set(log.exercise_name, entry);
     }
+  }
+  for (const [region, byName] of Object.entries(perExercise) as [RegionGroup, Map<string, { sets: number; share: number }>][]) {
+    const work = regions[region];
+    if (!work) continue;
+    work.byExercise = [...byName.entries()]
+      .map(([name, e]) => ({ name, sets: e.sets, share: e.share }))
+      .sort((a, b) => b.sets - a.sets);
   }
   return { regions, offModelSets };
 };

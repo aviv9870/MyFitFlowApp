@@ -3,7 +3,7 @@ import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import MaterialIcon from "@/components/MaterialIcon";
-import { formatSets, type MuscleWork } from "@/lib/muscleGroups";
+import { formatSets, type RegionWork } from "@/lib/muscleGroups";
 import { Model, MODEL_URL, DRACO_PATH } from "./BodyModel";
 import {
   DEFAULT_WEEKLY_SET_RANGE,
@@ -21,7 +21,7 @@ import {
   type WeeklySetRange,
 } from "./regions";
 
-type RegionWeek = Partial<Record<RegionGroup, MuscleWork>>;
+type RegionWeek = Partial<Record<RegionGroup, RegionWork>>;
 
 // Selection glow follows the user's accent theme (lib/theme.ts rewrites --primary at runtime).
 function themePrimary() {
@@ -230,15 +230,17 @@ function RegionCard({
   onClose,
 }: {
   region: RegionGroup;
-  work: MuscleWork | undefined;
+  work: RegionWork | undefined;
   range: WeeklySetRange;
   onClose: () => void;
 }) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const label = REGION_LABELS[region];
   const group = REGION_APP_GROUP[region];
   const sets = work?.sets ?? 0;
   const zone = loadZone(sets, range);
   const color = loadColor(sets, range);
+  const byExercise = work?.byExercise ?? [];
   return (
     <section className="bg-secondary/50 rounded-xl p-3 mt-3 text-right" aria-live="polite" aria-label={label}>
       <div className="flex items-center gap-2">
@@ -253,7 +255,20 @@ function RegionCard({
         </button>
       </div>
       <div className="flex items-baseline gap-2 mt-0.5">
-        <span className="text-2xl font-bold text-foreground tabular-nums">{formatSets(sets)}</span>
+        {byExercise.length > 0 ? (
+          <button
+            onClick={() => setShowBreakdown(true)}
+            className="flex items-baseline gap-1 text-right"
+            aria-label={`פירוט ${formatSets(sets)} הסטים של ${label} לפי תרגיל`}
+          >
+            <span className="text-2xl font-bold text-foreground tabular-nums underline decoration-dotted underline-offset-4">
+              {formatSets(sets)}
+            </span>
+            <MaterialIcon icon="expand_content" className="text-primary text-[14px]" />
+          </button>
+        ) : (
+          <span className="text-2xl font-bold text-foreground tabular-nums">{formatSets(sets)}</span>
+        )}
         <span className="text-[11.5px] text-muted-foreground">סטים השבוע</span>
         <span
           className={`ms-auto text-[11px] font-semibold rounded-full px-2 py-0.5 bg-background/60 ${
@@ -290,6 +305,50 @@ function RegionCard({
           </p>
         </div>
       </div>
+
+      {showBreakdown && (
+        <div
+          className="fixed inset-0 z-[70] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
+          dir="rtl"
+          onClick={() => setShowBreakdown(false)}
+        >
+          <div
+            className="glass-card w-full max-w-sm p-4 max-h-[70vh] overflow-y-auto"
+            role="dialog"
+            aria-label={`פירוט הסטים של ${label}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm font-semibold text-foreground">{label}</span>
+              <span className="text-[11.5px] text-muted-foreground tabular-nums">
+                {formatSets(sets)} סטים השבוע
+              </span>
+              <button
+                onClick={() => setShowBreakdown(false)}
+                aria-label="סגירה"
+                className="ms-auto -me-1.5 h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:bg-secondary/50"
+              >
+                <MaterialIcon icon="close" className="text-[18px]" />
+              </button>
+            </div>
+            <div className="divide-y divide-border">
+              {byExercise.map((ex) => (
+                <div key={ex.name} className="flex items-baseline gap-2 py-2">
+                  <span className="text-sm text-foreground tabular-nums shrink-0">{formatSets(ex.sets)}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {ex.share >= 0.999 ? "סטים" : `סטים עקיפים (${Math.round(ex.share * 100)}%)`}
+                  </span>
+                  <span className="text-[12.5px] text-foreground text-left flex-1">{ex.name}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10.5px] text-muted-foreground mt-2">
+              סט מלא נספר כשהשריר עיקרי בתרגיל. סט עקיף כשהוא עוזר בתרגיל שעיקרו שריר אחר, ואז נספר חלק מסט
+              לפי מידת ההשתתפות.
+            </p>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
