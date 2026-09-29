@@ -7,6 +7,7 @@ import PlanEditor from "@/components/PlanEditor";
 import AIPlanGenerator from "@/components/AIPlanGenerator";
 import SwapExerciseModal from "@/components/SwapExerciseModal";
 import ExerciseHistory from "@/components/ExerciseHistory";
+import PersonalRecords from "@/components/PersonalRecords";
 import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
 import { getPlanExerciseExtras } from "@/services/workoutExtrasLocal";
@@ -355,16 +356,67 @@ const Workout = () => {
     setRestProgressMsg(null);
   }, []);
 
-  const handleSwap = (exIdx: number, newExercise: { id: string; name: string; muscle_group: string }) => {
+  // The last session this exercise was trained in, set by set, so a card can
+  // show what to beat. Without it a swapped-in or added exercise is the one
+  // card in the workout being logged blind.
+  const loadPrevSets = async (exerciseName: string): Promise<{ weight: number; reps: number }[]> => {
+    if (!user) return [];
+    const { data: latest } = await supabase
+      .from("workout_set_logs")
+      .select("session_id")
+      .eq("user_id", user.id)
+      .eq("exercise_name", exerciseName)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const lastSessionId = latest?.[0]?.session_id;
+    if (!lastSessionId) return [];
+
+    const { data: rows } = await supabase
+      .from("workout_set_logs")
+      .select("weight, reps")
+      .eq("user_id", user.id)
+      .eq("session_id", lastSessionId)
+      .eq("exercise_name", exerciseName)
+      .order("set_number", { ascending: true });
+    return rows ?? [];
+  };
+
+  const handleSwap = async (exIdx: number, newExercise: { id: string; name: string; muscle_group: string }) => {
+    setSwapIdx(null);
+    // Swap first so the card renames immediately, then fill in the new
+    // exercise's own previous numbers - keeping the old exercise's hints
+    // would have the trainee chasing a target from a different lift.
     setExercises((prev) =>
       prev.map((ex, i) =>
         i === exIdx
-          ? { ...ex, name: newExercise.name, exerciseId: newExercise.id, repRange: getRepRange(newExercise.name) }
+          ? {
+              ...ex,
+              name: newExercise.name,
+              exerciseId: newExercise.id,
+              repRange: getRepRange(newExercise.name),
+              sets: ex.sets.map((set) => ({ ...set, prevWeight: null, prevReps: null })),
+            }
           : ex
       )
     );
-    setSwapIdx(null);
     toast.success(`הוחלף ל-${newExercise.name}`);
+
+    const prevSets = await loadPrevSets(newExercise.name);
+    setExercises((prev) =>
+      prev.map((ex, i) =>
+        i === exIdx && ex.name === newExercise.name
+          ? {
+              ...ex,
+              sets: ex.sets.map((set, setIdx) => ({
+                ...set,
+                prevWeight: prevSets[setIdx]?.weight ?? null,
+                prevReps: prevSets[setIdx]?.reps ?? null,
+              })),
+            }
+          : ex
+      )
+    );
   };
 
   const ADDED_EXERCISE_SETS = 3;
@@ -373,31 +425,7 @@ const Workout = () => {
   const handleAddExercise = async (newExercise: { id: string; name: string; muscle_group: string }) => {
     setAddingExercise(false);
 
-    // Pull the last time this exercise was trained so the added card shows the
-    // same "previous" hints as every exercise that came from the plan -
-    // otherwise it's the one card in the workout logging blind.
-    let prevSets: { weight: number; reps: number }[] = [];
-    if (user) {
-      const { data: latest } = await supabase
-        .from("workout_set_logs")
-        .select("session_id")
-        .eq("user_id", user.id)
-        .eq("exercise_name", newExercise.name)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      const lastSessionId = latest?.[0]?.session_id;
-      if (lastSessionId) {
-        const { data: rows } = await supabase
-          .from("workout_set_logs")
-          .select("weight, reps")
-          .eq("user_id", user.id)
-          .eq("session_id", lastSessionId)
-          .eq("exercise_name", newExercise.name)
-          .order("set_number", { ascending: true });
-        prevSets = rows ?? [];
-      }
-    }
+    const prevSets = await loadPrevSets(newExercise.name);
 
     setExercises((prev) => [
       ...prev,
@@ -542,6 +570,14 @@ const Workout = () => {
     const completedSets = exercises.flatMap((ex) =>
       ex.sets.filter((s) => s.reps > 0).map((s) => ({ name: ex.name, weight: s.weight, reps: s.reps }))
     );
+    // Same shape PersonalRecords gets when a finished workout is reopened from
+    // History, so the records (and the celebration) show up the moment the
+    // workout ends instead of only on a later visit to the summary.
+    const recordSets = exercises.flatMap((ex) =>
+      ex.sets
+        .filter((s) => s.reps > 0)
+        .map((s, setIdx) => ({ exercise_name: ex.name, set_number: setIdx + 1, weight: s.weight, reps: s.reps }))
+    );
     const totalVol = completedSets.reduce((a, s) => a + s.weight * s.reps, 0);
     const grouped: Record<string, { weight: number; reps: number; setIdx: number; exIdx: number }[]> = {};
     exercises.forEach((ex, exIdx) => {
@@ -583,6 +619,18 @@ const Workout = () => {
             <p className="text-[10px] text-muted-foreground">דק׳</p>
           </div>
         </div>
+
+        {user && doneSessionId && recordSets.length > 0 && (
+          <div className="mb-4">
+            <PersonalRecords
+              sessionId={doneSessionId}
+              sets={recordSets}
+              userId={user.id}
+              planName={selectedPlan?.name ?? ""}
+              date={new Date().toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "numeric" })}
+            />
+          </div>
+        )}
 
         {/* Exercise breakdown */}
         <div className="space-y-2 mb-4">
