@@ -4,11 +4,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import TrendChart from "@/components/charts/TrendChart";
 import DistributionBars from "@/components/charts/DistributionBars";
+import ExerciseHistory from "@/components/ExerciseHistory";
 import { bucketByDay, bucketByMonth, safeNumber, safeDiv, type TrendPoint } from "@/lib/chartData";
-import { canonicalMuscleGroup, muscleColor, formatSets, tallyMuscleWork, tallyRegionWeek, type MuscleWork } from "@/lib/muscleGroups";
+import { canonicalMuscleGroup, muscleColor, formatSets, tallyMuscleWork, tallyRegionWeek, type MuscleWork, type RegionWork } from "@/lib/muscleGroups";
 import { regionsForExercise } from "@/lib/exerciseRegions";
 import { DEFAULT_WEEKLY_SET_RANGE, type RegionGroup } from "@/components/3d/regions";
 import { toast } from "sonner";
+import { aiErrorMessage } from "@/lib/aiErrors";
 import { useGender } from "@/hooks/useGender";
 
 // three.js and the 5 MB model load only when this page renders the map.
@@ -95,11 +97,15 @@ const Analytics = () => {
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [showTrendChart, setShowTrendChart] = useState(false);
   const [showMuscleBars, setShowMuscleBars] = useState(false);
+  const [exerciseNames, setExerciseNames] = useState<string[]>([]);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [progressExercise, setProgressExercise] = useState<string | null>(null);
 
   const [muscleSetCounts, setMuscleSetCounts] = useState<Record<string, number>>({});
   const [muscleWeekly, setMuscleWeekly] = useState<Record<string, MuscleWork>>({});
   const [regionWeek, setRegionWeek] = useState<{
-    regions: Partial<Record<RegionGroup, MuscleWork>>;
+    regions: Partial<Record<RegionGroup, RegionWork>>;
     offModelSets: number;
   }>({ regions: {}, offModelSets: 0 });
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
@@ -290,6 +296,16 @@ const Analytics = () => {
       .eq("user_id", user.id)
       .gte("created_at", thirtyDaysAgo.toISOString());
 
+    // Exercises this user has actually logged (not the whole library), most
+    // recently trained first, for the per-exercise progress picker.
+    const { data: loggedNames } = await supabase
+      .from("workout_set_logs")
+      .select("exercise_name, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(600);
+    setExerciseNames([...new Set((loggedNames ?? []).map((r) => r.exercise_name))]);
+
     const [{ data: exercises }, { data: kinesiology, error: kinesiologyError }] = await Promise.all([
       supabase.from("exercises").select("id, name, muscle_group"),
       supabase.from("pz_exercise_kinesiology").select("exercise_id, muscle_contributions"),
@@ -363,9 +379,9 @@ const Analytics = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setAiInsights(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "שגיאה בניתוח AI");
+      toast.error(aiErrorMessage(err));
     } finally {
       setLoadingAi(false);
     }
@@ -378,6 +394,10 @@ const Analytics = () => {
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold neon-text">PERFORMANCE ANALYTICS</h1>
       </div>
+
+      {progressExercise && (
+        <ExerciseHistory exerciseName={progressExercise} onClose={() => setProgressExercise(null)} />
+      )}
 
       {/* This week's load per muscle on a 3D body, from the same set logs as the distribution bars */}
       <div className="glass-card p-4 mb-3.5">
@@ -399,6 +419,55 @@ const Analytics = () => {
             range={DEFAULT_WEEKLY_SET_RANGE}
           />
         </Suspense>
+      </div>
+
+      {/* Per-exercise progress: pick an exercise to see its own 1RM trend and
+          session history (the same view the workout screen's history button opens). */}
+      <div className="glass-card p-4 mb-3.5">
+        <button
+          type="button"
+          onClick={() => setShowExercisePicker((open) => !open)}
+          aria-expanded={showExercisePicker}
+          className="w-full flex items-start justify-between gap-2 text-right"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-foreground mb-1">התקדמות לפי תרגיל</span>
+            <span className="block text-[11.5px] text-muted-foreground">בחר תרגיל לגרף שיפור והיסטוריה</span>
+          </span>
+          <MaterialIcon icon={showExercisePicker ? "expand_less" : "expand_more"} className="text-muted-foreground text-[20px]" />
+        </button>
+
+        {showExercisePicker && (
+          <div className="mt-3">
+            {exerciseNames.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">אין עדיין תרגילים מתועדים</p>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="חיפוש תרגיל..."
+                  value={exerciseSearch}
+                  onChange={(e) => setExerciseSearch(e.target.value)}
+                  className="w-full bg-secondary/50 border border-border rounded-lg py-1.5 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <div className="max-h-56 overflow-y-auto mt-2 space-y-1">
+                  {exerciseNames
+                    .filter((n) => n.includes(exerciseSearch))
+                    .map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setProgressExercise(n)}
+                        className="w-full text-right flex items-center justify-between gap-2 px-2 py-2 rounded-lg hover:bg-secondary/50"
+                      >
+                        <span className="text-[12.5px] text-foreground">{n}</span>
+                        <MaterialIcon icon="show_chart" className="text-primary text-[16px]" />
+                      </button>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Muscle group distribution: a one-line stacked bar until expanded to the full

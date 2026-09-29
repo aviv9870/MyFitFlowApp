@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import TrendChart from "@/components/charts/TrendChart";
+import { sparsePoints } from "@/lib/chartData";
+import { calculateBrzycki1RM } from "@/domain/fitness-calculations";
 
 interface SessionGroup {
   sessionId: string;
@@ -49,13 +52,38 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
       });
       const arr = Object.values(byId)
         .map((g) => ({ ...g, sets: g.sets.sort((a, b) => a.set_number - b.set_number) }))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 10);
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setGroups(arr);
       setLoading(false);
     };
     load();
   }, [exerciseName, user]);
+
+  // Estimated 1RM is what shows progress when weight and reps move in
+  // opposite directions (60x5 is stronger than 62.5x3); the heaviest set of
+  // each session is the session's best effort.
+  const progress = useMemo(
+    () =>
+      sparsePoints(
+        [...groups].reverse().slice(-12),
+        (g) => g.date,
+        (g) => {
+          const best = Math.max(
+            0,
+            ...g.sets.filter((s) => s.weight > 0 && s.reps > 0).map((s) => calculateBrzycki1RM(s.weight, s.reps)),
+          );
+          return best > 0 ? Math.round(best * 10) / 10 : null;
+        },
+      ),
+    [groups],
+  );
+
+  const firstValue = progress.find((p) => p.value !== null)?.value ?? null;
+  const lastValue = [...progress].reverse().find((p) => p.value !== null)?.value ?? null;
+  const deltaPct =
+    firstValue !== null && lastValue !== null && firstValue > 0
+      ? ((lastValue - firstValue) / firstValue) * 100
+      : null;
 
   return (
     <div className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-xl flex flex-col" dir="rtl">
@@ -78,7 +106,30 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
             <p className="text-muted-foreground text-sm">אין היסטוריה לתרגיל זה</p>
           </div>
         ) : (
-          groups.map((g) => (
+          <>
+            <div className="glass-card p-3">
+              <div className="flex items-baseline justify-between mb-1">
+                <p className="text-xs font-semibold text-foreground">גרף התקדמות</p>
+                {deltaPct !== null && (
+                  <span className={`flex items-center gap-1 text-[11px] font-bold ${deltaPct >= 0 ? "text-primary" : "text-destructive"}`}>
+                    <MaterialIcon icon={deltaPct >= 0 ? "trending_up" : "trending_down"} className="text-[14px]" />
+                    {deltaPct > 0 ? "+" : ""}{deltaPct.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-2">1RM משוער לפי הסט הטוב באימון · עד 12 אימונים אחרונים</p>
+              <TrendChart
+                data={progress}
+                height={120}
+                unit="ק״ג"
+                valueLabel="1RM משוער"
+                showYAxis
+                connectNulls
+                emptyTitle="צריך לפחות שני אימונים עם התרגיל"
+                emptyHint="אחרי אימון נוסף יופיע כאן גרף ההתקדמות"
+              />
+            </div>
+            {groups.slice(0, 10).map((g) => (
             <div key={g.sessionId} className="glass-card p-3">
               <p className="text-xs text-muted-foreground mb-2">
                 {new Date(g.date).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
@@ -93,7 +144,8 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
                 ))}
               </div>
             </div>
-          ))
+            ))}
+          </>
         )}
       </div>
     </div>
