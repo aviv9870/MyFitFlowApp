@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
+import SwapExerciseModal from "@/components/SwapExerciseModal";
 import { toast } from "sonner";
 import { getPlanExerciseExtras, savePlanExerciseExtras, type PlanExerciseExtras } from "@/services/workoutExtrasLocal";
 
@@ -56,6 +57,7 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
   });
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [swapIdx, setSwapIdx] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [saving, setSaving] = useState(false);
   const [showAddNew, setShowAddNew] = useState(false);
@@ -118,6 +120,20 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
 
   const removeExercise = (idx: number) => {
     setPlanExercises((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Same swap the trainee can do mid-workout, but on the plan itself: only the
+  // exercise changes, so its sets, rest, tempo, notes, order and superset
+  // grouping survive - deleting and re-adding would lose all of that.
+  const swapExercise = (idx: number, ex: Exercise) => {
+    setSwapIdx(null);
+    if (planExercises.some((pe, i) => i !== idx && pe.exercise_id === ex.id)) {
+      toast.error("התרגיל כבר נמצא בתוכנית");
+      return;
+    }
+    setPlanExercises((prev) =>
+      prev.map((pe, i) => (i === idx ? { ...pe, exercise_id: ex.id, exercise_name: ex.name } : pe))
+    );
   };
 
   const updateExercise = (idx: number, field: "target_sets" | "rest_seconds", value: number | null) => {
@@ -261,8 +277,10 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
             <label className="text-[10px] text-muted-foreground">סטים</label>
             <input
               type="number"
-              value={pe.target_sets}
-              onChange={(e) => updateExercise(idx, "target_sets", Number(e.target.value))}
+              inputMode="numeric"
+              value={pe.target_sets || ""}
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => updateExercise(idx, "target_sets", Math.max(0, Math.trunc(Number(e.target.value)) || 0))}
               className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -270,8 +288,10 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
             <label className="text-[10px] text-muted-foreground">מנוחה (שניות)</label>
             <input
               type="number"
-              value={pe.rest_seconds}
-              onChange={(e) => updateExercise(idx, "rest_seconds", Number(e.target.value))}
+              inputMode="numeric"
+              value={pe.rest_seconds || ""}
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => updateExercise(idx, "rest_seconds", Math.max(0, Math.trunc(Number(e.target.value)) || 0))}
               className="w-full bg-secondary/50 border border-border rounded-lg py-1 px-2 text-sm text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -300,15 +320,28 @@ const PlanEditor = ({ plan, onSave, onCancel, forUserId }: Props) => {
         </div>
       </div>
       {!selectionMode && (
-        <button onClick={() => removeExercise(idx)} className="text-destructive">
-          <MaterialIcon icon="close" className="text-[18px]" />
-        </button>
+        <div className="flex flex-col items-center gap-2">
+          <button onClick={() => removeExercise(idx)} className="text-destructive" title="הסר תרגיל">
+            <MaterialIcon icon="close" className="text-[18px]" />
+          </button>
+          <button onClick={() => setSwapIdx(idx)} className="text-muted-foreground hover:text-foreground" title="החלף תרגיל">
+            <MaterialIcon icon="swap_horiz" className="text-[18px]" />
+          </button>
+        </div>
       )}
     </div>
   );
 
   return (
     <div className="space-y-4">
+      {swapIdx !== null && planExercises[swapIdx] && (
+        <SwapExerciseModal
+          currentExerciseName={planExercises[swapIdx].exercise_name}
+          excludeNames={planExercises.map((pe) => pe.exercise_name)}
+          onSelect={(ex) => swapExercise(swapIdx, ex)}
+          onClose={() => setSwapIdx(null)}
+        />
+      )}
       <input
         type="text"
         placeholder="שם התוכנית"
