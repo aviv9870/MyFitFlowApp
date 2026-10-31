@@ -65,12 +65,30 @@ describe("regionsForExercise", () => {
     });
   });
 
-  it("falls back to a single-region muscle group, else nothing", () => {
+  it("falls back to the seeded per-group defaults, with 0.5 for the indirect muscles", () => {
     expect(regionsForExercise(byId, "not-seeded", "חזה")).toEqual({
-      shares: { Chest: 1 },
+      shares: { Chest: 1, Deltoid: 0.5, Triceps: 0.5 },
       primaryOnModel: true,
     });
-    expect(regionsForExercise(byId, undefined, "רגליים")).toBeNull();
+    expect(regionsForExercise(byId, undefined, "רגליים")).toEqual({
+      shares: { Quad: 1, Glute: 0.5, Hamstring: 0.5 },
+      primaryOnModel: true,
+    });
+    // English group names (the exercises table holds both) resolve the same way.
+    expect(regionsForExercise(byId, undefined, "Chest")).toEqual(regionsForExercise(byId, undefined, "חזה"));
+  });
+
+  it("knows nothing about a group it has no defaults for", () => {
+    expect(regionsForExercise(byId, undefined, "אחר")).toBeNull();
+  });
+
+  it("credits a machine chest press with no kinesiology row its triceps and front delts", () => {
+    // The trainee-added "לחיצת חזה במכונה": 6 sets this week, no kinesiology row.
+    const logs = Array.from({ length: 6 }, () => ({ exercise_name: "לחיצת חזה במכונה", created_at: "2026-09-08T10:00:00", weight: 50, reps: 10 }));
+    const { regions } = tallyRegionWeek(logs, (name) => regionsForExercise(byId, undefined, name === "לחיצת חזה במכונה" ? "חזה" : "אחר"), new Date("2026-09-06T00:00:00"));
+    expect(regions.Chest?.sets).toBe(6);
+    expect(regions.Triceps?.sets).toBe(3);
+    expect(regions.Deltoid?.sets).toBe(3);
   });
 });
 

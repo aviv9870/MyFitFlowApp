@@ -1,4 +1,5 @@
 import type { RegionGroup } from "@/components/3d/regions";
+import { canonicalMuscleGroup } from "@/lib/muscleGroups";
 
 export type RegionShares = Partial<Record<RegionGroup, number>>;
 
@@ -55,14 +56,19 @@ export function regionsFromContributions(contributions: Record<string, number>):
   return { shares, primaryOnModel };
 }
 
-// An exercise without a kinesiology row (e.g. approved after the table was
-// seeded) falls back to its muscle_group when that group is a single region.
-const GROUP_FALLBACK: Record<string, RegionGroup> = {
-  "חזה": "Chest",
-  "גב": "Lat",
-  "כתפיים": "Deltoid",
-  "יד קדמית": "Biceps",
-  "יד אחורית": "Triceps",
+// An exercise without a kinesiology row - one the trainee added after the table
+// was seeded, or an approved one the seed missed - gets the same per-group
+// defaults the table itself was seeded with for exercises its name rules
+// didn't recognise. Crediting only the primary muscle (as this used to) meant
+// a machine chest press never counted its triceps and front-delt work.
+const GROUP_DEFAULTS: Record<string, Record<string, number>> = {
+  "חזה": { chest: 1, front_delts: 0.5, triceps: 0.5 },
+  "גב": { lats: 1, upper_back: 0.5, biceps: 0.5 },
+  "כתפיים": { front_delts: 1, side_delts: 0.5, triceps: 0.5 },
+  "רגליים": { quads: 1, glutes: 0.5, hamstrings: 0.5 },
+  "בטן": { abs: 1, obliques: 0.5 },
+  "יד קדמית": { biceps: 1, forearms: 0.3 },
+  "יד אחורית": { triceps: 1 },
 };
 
 export function regionsForExercise(
@@ -72,6 +78,6 @@ export function regionsForExercise(
 ): ExerciseRegions | null {
   const contributions = exerciseId ? contributionsById.get(exerciseId) : undefined;
   if (contributions) return regionsFromContributions(contributions);
-  const region = GROUP_FALLBACK[muscleGroup];
-  return region ? { shares: { [region]: 1 }, primaryOnModel: true } : null;
+  const defaults = GROUP_DEFAULTS[canonicalMuscleGroup(muscleGroup)];
+  return defaults ? regionsFromContributions(defaults) : null;
 }
