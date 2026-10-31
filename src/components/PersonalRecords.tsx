@@ -160,7 +160,11 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
       // the browser rasterize it natively, so it renders this app's oklch()
       // colors and CSS variables correctly (unlike html2canvas, which parses
       // CSS itself and doesn't understand oklch() at all).
-      const blob = await toBlob(ref.current, { backgroundColor: "#0a0a0a", pixelRatio: 2 });
+      const blob = await toBlob(ref.current, {
+        backgroundColor: "#0a0a0a",
+        pixelRatio: 2,
+        filter: (node) => !(node instanceof HTMLElement && node.dataset.noShot !== undefined),
+      });
       if (!blob) throw new Error("Failed to generate image");
 
       const filename = `records_${planName}_${new Date().toISOString().slice(0, 10)}.png`;
@@ -175,7 +179,17 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
         return false;
       };
 
-      const shared = await shareViaNative();
+      // Android only allows sharing right after a tap, and rendering a tall
+      // card can take longer than that window. A refused share isn't a failed
+      // screenshot - the image is ready - so save it instead of reporting an
+      // error. Only the user dismissing the share sheet (AbortError) is final.
+      let shared = false;
+      try {
+        shared = await shareViaNative();
+      } catch (shareErr) {
+        if (shareErr instanceof DOMException && shareErr.name === "AbortError") return;
+        console.warn("Native share refused, saving the image instead:", shareErr);
+      }
       if (!shared) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -211,6 +225,7 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
           <h4 className="text-base font-bold text-foreground">שיאים אישיים חדשים! 🔥</h4>
         </div>
         <button
+          data-no-shot
           onClick={() => takeScreenshot(ref)}
           className="flex items-center gap-1 bg-secondary/50 border border-border rounded-xl px-2.5 py-1.5 hover:bg-secondary/70 transition-all"
         >
@@ -260,15 +275,24 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
 
       {/* Centered celebration modal */}
       {showModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="w-full max-w-sm animate-in zoom-in-95 duration-300">
-            {renderCard(modalCardRef)}
-            <button
-              onClick={closeModal}
-              className="w-full mt-3 bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm"
-            >
-              מגניב! 🎉
-            </button>
+        // The overlay itself scrolls and the card is centred by an inner
+        // min-h-full flex box. Centring the overlay directly (items-center on a
+        // fixed inset-0 box) clips a card taller than the screen at both ends:
+        // with many records the camera button at its top ended up off-screen
+        // and there was nothing to scroll.
+        <div className="fixed inset-0 z-[70] overflow-y-auto overscroll-contain bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="min-h-full flex items-center justify-center p-4">
+            <div className="w-full max-w-sm animate-in zoom-in-95 duration-300">
+              {renderCard(modalCardRef)}
+              <div className="sticky bottom-3 mt-3">
+                <button
+                  onClick={closeModal}
+                  className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold text-sm shadow-lg"
+                >
+                  מגניב! 🎉
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
