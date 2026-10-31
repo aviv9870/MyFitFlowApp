@@ -385,7 +385,14 @@ const Analytics = () => {
       </div>
 
       {progressExercise && (
-        <ExerciseHistory exerciseName={progressExercise} onClose={() => setProgressExercise(null)} />
+        <ExerciseHistory
+          exerciseName={progressExercise}
+          onClose={() => setProgressExercise(null)}
+          onMoved={(name) => {
+            setProgressExercise(name);
+            setExerciseNames((names) => (names.includes(name) ? names : [name, ...names]));
+          }}
+        />
       )}
 
       {/* This week's load per muscle on a 3D body, from the same set logs as the distribution bars */}

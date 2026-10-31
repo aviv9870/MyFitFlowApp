@@ -33,11 +33,13 @@ interface Props {
   currentExerciseName?: string;
   /** Exercise names already in the workout, hidden from the list. */
   excludeNames?: string[];
+  /** "transfer" = choosing where to move an exercise's history, not a replacement. */
+  mode?: "swap" | "transfer";
   onSelect: (exercise: Exercise) => void;
   onClose: () => void;
 }
 
-const SwapExerciseModal = ({ title = "החלף תרגיל", currentExerciseName, excludeNames, onSelect, onClose }: Props) => {
+const SwapExerciseModal = ({ title = "החלף תרגיל", currentExerciseName, excludeNames, mode = "swap", onSelect, onClose }: Props) => {
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
   const [kinesiology, setKinesiology] = useState<Map<string, Kinesiology>>(new Map());
   const [search, setSearch] = useState("");
@@ -118,7 +120,7 @@ const SwapExerciseModal = ({ title = "החלף תרגיל", currentExerciseName,
       <div className="px-4 mb-3">
         {currentExerciseName && (
           <p className="text-xs text-muted-foreground mb-2">
-            מחליף: <span className="text-primary">{currentExerciseName}</span>
+            {mode === "transfer" ? "ההיסטוריה של" : "מחליף"}: <span className="text-primary">{currentExerciseName}</span>
             {current && <span className="text-muted-foreground"> · לחיצה על i מסבירה במה כל תרגיל שונה</span>}
           </p>
         )}
@@ -183,6 +185,11 @@ const SwapExerciseModal = ({ title = "החלף תרגיל", currentExerciseName,
             onSelect(chosen);
           }}
           onClose={() => setExplain(null)}
+          labels={
+            mode === "transfer"
+              ? { current: "ההיסטוריה של", next: "מועברת אל", choose: "העבר לתרגיל הזה" }
+              : undefined
+          }
         />
       )}
     </div>

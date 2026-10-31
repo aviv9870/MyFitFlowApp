@@ -12,6 +12,7 @@ import { useGender, getProgressMessages } from "@/hooks/useGender";
 import { toast } from "sonner";
 import { getPlanExerciseExtras } from "@/services/workoutExtrasLocal";
 import { parseReps, parseWeight, repsInputProps, weightInputProps } from "@/lib/setInputs";
+import { loadLastPerformance } from "@/lib/lastPerformance";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -200,40 +201,9 @@ const Workout = () => {
 
     const exNames = plan.exercises.map((e) => e.exercise_name);
 
-    // Batch: one query to find the latest session_id per exercise
-    const { data: latestRows } = await supabase
-      .from("workout_set_logs")
-      .select("exercise_name, session_id, created_at")
-      .eq("user_id", user.id)
-      .in("exercise_name", exNames)
-      .order("created_at", { ascending: false });
-
-    const latestSessionPerExercise: Record<string, string> = {};
-    for (const row of (latestRows ?? [])) {
-      if (!latestSessionPerExercise[row.exercise_name]) {
-        latestSessionPerExercise[row.exercise_name] = row.session_id;
-      }
-    }
-
-    // Batch: one query to fetch all sets from those sessions
-    const sessionIds = [...new Set(Object.values(latestSessionPerExercise))];
-    const prevDataPerSet: Record<string, { weight: number; reps: number }[]> = {};
-    if (sessionIds.length > 0) {
-      const { data: allPrevSets } = await supabase
-        .from("workout_set_logs")
-        .select("exercise_name, weight, reps, set_number, session_id")
-        .eq("user_id", user.id)
-        .in("session_id", sessionIds)
-        .in("exercise_name", exNames)
-        .order("set_number", { ascending: true });
-
-      for (const s of (allPrevSets ?? [])) {
-        if (s.session_id === latestSessionPerExercise[s.exercise_name]) {
-          if (!prevDataPerSet[s.exercise_name]) prevDataPerSet[s.exercise_name] = [];
-          prevDataPerSet[s.exercise_name].push({ weight: s.weight, reps: s.reps });
-        }
-      }
-    }
+    // Last session per exercise (borrowed from a sibling variation when an
+    // exercise has no history of its own).
+    const prevDataPerSet = await loadLastPerformance(user.id, exNames);
 
     const planExtras = getPlanExerciseExtras(plan.id);
 
@@ -361,25 +331,7 @@ const Workout = () => {
   // card in the workout being logged blind.
   const loadPrevSets = async (exerciseName: string): Promise<{ weight: number; reps: number }[]> => {
     if (!user) return [];
-    const { data: latest } = await supabase
-      .from("workout_set_logs")
-      .select("session_id")
-      .eq("user_id", user.id)
-      .eq("exercise_name", exerciseName)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    const lastSessionId = latest?.[0]?.session_id;
-    if (!lastSessionId) return [];
-
-    const { data: rows } = await supabase
-      .from("workout_set_logs")
-      .select("weight, reps")
-      .eq("user_id", user.id)
-      .eq("session_id", lastSessionId)
-      .eq("exercise_name", exerciseName)
-      .order("set_number", { ascending: true });
-    return rows ?? [];
+    return (await loadLastPerformance(user.id, [exerciseName]))[exerciseName] ?? [];
   };
 
   const handleSwap = async (exIdx: number, newExercise: { id: string; name: string; muscle_group: string }) => {
@@ -927,7 +879,7 @@ const Workout = () => {
         </AlertDialog>
 
         {historyExercise && (
-          <ExerciseHistory exerciseName={historyExercise} onClose={() => setHistoryExercise(null)} />
+          <ExerciseHistory exerciseName={historyExercise} onClose={() => setHistoryExercise(null)} onMoved={setHistoryExercise} />
         )}
       </div>
     );

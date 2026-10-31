@@ -7,7 +7,11 @@ interface Props {
   to: ExerciseInfo;
   onChoose: () => void;
   onClose: () => void;
+  /** Wording for swapping (default) vs moving history to another exercise. */
+  labels?: { current: string; next: string; choose: string };
 }
+
+const SWAP_LABELS = { current: "התרגיל הנוכחי", next: "מוחלף ב", choose: "בחר בתרגיל הזה" };
 
 const RELATION_STYLE: Record<ExerciseRelation, string> = {
   variation: "bg-primary/15 text-primary",
@@ -17,7 +21,7 @@ const RELATION_STYLE: Record<ExerciseRelation, string> = {
 
 // Bottom sheet behind the "i" button of the swap picker: how the exercise being
 // replaced differs from the one the trainee is looking at, in coaching terms.
-const ExerciseComparisonSheet = ({ from, to, onChoose, onClose }: Props) => {
+const ExerciseComparisonSheet = ({ from, to, onChoose, onClose, labels = SWAP_LABELS }: Props) => {
   const comparison = compareExercises(from, to);
 
   // Rendered into <body>: the picker that opens this is itself a z-50 stacking
@@ -39,11 +43,11 @@ const ExerciseComparisonSheet = ({ from, to, onChoose, onClose }: Props) => {
         </div>
 
         <div className="rounded-xl bg-secondary/40 p-3 mb-3">
-          <p className="text-[11px] text-muted-foreground">התרגיל הנוכחי</p>
+          <p className="text-[11px] text-muted-foreground">{labels.current}</p>
           <p className="text-sm font-semibold text-foreground">{from.name}</p>
           <div className="flex items-center gap-1.5 my-1.5 text-muted-foreground">
             <MaterialIcon icon="south" className="text-[16px]" />
-            <span className="text-[11px]">מוחלף ב</span>
+            <span className="text-[11px]">{labels.next}</span>
           </div>
           <p className="text-sm font-semibold text-primary">{to.name}</p>
         </div>
@@ -76,7 +80,7 @@ const ExerciseComparisonSheet = ({ from, to, onChoose, onClose }: Props) => {
 
         <div className="mt-5 flex gap-2">
           <button onClick={onChoose} className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground">
-            בחר בתרגיל הזה
+            {labels.choose}
           </button>
           <button onClick={onClose} className="rounded-xl bg-secondary px-5 py-3 text-sm font-semibold text-foreground">
             חזרה

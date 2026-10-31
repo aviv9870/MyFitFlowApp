@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import MaterialIcon from "@/components/MaterialIcon";
 import TrendChart from "@/components/charts/TrendChart";
 import { sparsePoints } from "@/lib/chartData";
 import { calculateBrzycki1RM } from "@/domain/fitness-calculations";
+import SwapExerciseModal from "@/components/SwapExerciseModal";
+import { moveExerciseHistory, undoExerciseHistoryMove } from "@/lib/historyTransfer";
 
 interface SessionGroup {
   sessionId: string;
@@ -15,12 +19,17 @@ interface SessionGroup {
 interface Props {
   exerciseName: string;
   onClose: () => void;
+  /** Called with the exercise whose history to show next after a move (or an undo). Defaults to closing. */
+  onMoved?: (exerciseName: string) => void;
 }
 
-const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
+const ExerciseHistory = ({ exerciseName, onClose, onMoved }: Props) => {
   const { user } = useAuth();
   const [groups, setGroups] = useState<SessionGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [picking, setPicking] = useState(false);
+  const [target, setTarget] = useState<{ id: string; name: string; muscle_group: string } | null>(null);
+  const [moving, setMoving] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -85,6 +94,45 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
       ? ((lastValue - firstValue) / firstValue) * 100
       : null;
 
+  const totalSets = groups.reduce((sum, g) => sum + g.sets.length, 0);
+
+  const confirmMove = async () => {
+    if (!user || !target) return;
+    const from = exerciseName;
+    const to = target.name;
+    setMoving(true);
+    try {
+      const ids = await moveExerciseHistory(user.id, from, to);
+      setTarget(null);
+      if (ids.length === 0) {
+        toast.error("לא נמצאו סטים להעברה");
+        return;
+      }
+      toast.success(`${ids.length} סטים הועברו אל ${to}`, {
+        duration: 12000,
+        action: {
+          label: "בטל",
+          onClick: async () => {
+            try {
+              await undoExerciseHistoryMove(user.id, ids, from);
+              toast.success("ההעברה בוטלה");
+              (onMoved ?? onClose)(from);
+            } catch (err) {
+              console.error(err);
+              toast.error("שגיאה בביטול ההעברה", { description: (err as { message?: string })?.message });
+            }
+          },
+        },
+      });
+      (onMoved ?? onClose)(to);
+    } catch (err) {
+      console.error(err);
+      toast.error("שגיאה בהעברת ההיסטוריה", { description: (err as { message?: string })?.message });
+    } finally {
+      setMoving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-xl flex flex-col" dir="rtl">
       <div className="flex items-center justify-between px-4 pt-6 pb-3 border-b border-border">
@@ -96,7 +144,18 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
           <MaterialIcon icon="close" className="text-foreground text-[24px]" />
         </button>
       </div>
-      <p className="px-4 pt-3 text-sm text-primary font-semibold">{exerciseName}</p>
+      <div className="px-4 pt-3 flex items-center justify-between gap-3">
+        <p className="text-sm text-primary font-semibold min-w-0">{exerciseName}</p>
+        {groups.length > 0 && (
+          <button
+            onClick={() => setPicking(true)}
+            className="shrink-0 flex items-center gap-1 rounded-lg bg-secondary/60 px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-secondary"
+          >
+            <MaterialIcon icon="drive_file_move" className="text-[15px]" />
+            העבר היסטוריה
+          </button>
+        )}
+      </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {loading ? (
           <p className="text-center text-muted-foreground text-sm mt-10">טוען...</p>
@@ -148,6 +207,53 @@ const ExerciseHistory = ({ exerciseName, onClose }: Props) => {
           </>
         )}
       </div>
+
+      {picking && (
+        <SwapExerciseModal
+          title="העבר את ההיסטוריה אל…"
+          mode="transfer"
+          currentExerciseName={exerciseName}
+          onSelect={(ex) => {
+            setPicking(false);
+            setTarget(ex);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+
+      {target &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 backdrop-blur-sm" dir="rtl" onClick={() => !moving && setTarget(null)}>
+            <div
+              role="dialog"
+              aria-label="אישור העברת היסטוריה"
+              className="w-full max-w-lg rounded-t-3xl border-t border-border bg-card p-5 pb-[max(2rem,env(safe-area-inset-bottom))]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-bold text-foreground mb-2">להעביר את ההיסטוריה?</h3>
+              <p className="text-[13px] text-foreground leading-relaxed">
+                {totalSets} סטים מ-{groups.length} אימונים של <span className="font-semibold text-primary">{exerciseName}</span> יעברו אל{" "}
+                <span className="font-semibold text-primary">{target.name}</span>.
+              </p>
+              <p className="text-[12px] text-muted-foreground leading-relaxed mt-2">
+                ההיסטוריה, השיאים והגרפים יופיעו מעכשיו תחת {target.name} ויוסרו מ{exerciseName}. בסיום יופיע כפתור ביטול למשך כמה שניות.
+              </p>
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={confirmMove}
+                  disabled={moving}
+                  className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                >
+                  {moving ? "מעביר..." : "העבר"}
+                </button>
+                <button onClick={() => setTarget(null)} disabled={moving} className="rounded-xl bg-secondary px-5 py-3 text-sm font-semibold text-foreground">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

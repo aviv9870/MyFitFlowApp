@@ -4,23 +4,10 @@ import MaterialIcon from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import { toBlob } from "html-to-image";
 import confetti from "canvas-confetti";
+import { findPersonalRecords, type PRRecord, type RecordType, type SessionSet } from "@/domain/personalRecords";
+import { loadFamilyIndex } from "@/lib/exerciseLibrary";
 
-interface SetLog {
-  exercise_name: string;
-  set_number: number;
-  weight: number;
-  reps: number;
-}
-
-type RecordType = "weight" | "1rm" | "reps" | "volume";
-
-interface PRRecord {
-  exercise: string;
-  type: RecordType;
-  oldValue: number;
-  newValue: number;
-  isFirst: boolean;
-}
+type SetLog = SessionSet;
 
 const CATEGORY_META: { [key in RecordType]: { label: string; icon: string; unit: string } } = {
   weight: { label: "משקל", icon: "fitness_center", unit: "ק״ג" },
@@ -36,8 +23,6 @@ interface Props {
   planName: string;
   date: string;
 }
-
-const calc1RM = (w: number, r: number) => r === 1 ? w : w / (1.0278 - 0.0278 * r);
 
 // The celebration modal + confetti should only ever fire once per session —
 // this component is reused to browse already-completed sessions from
@@ -87,57 +72,20 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
   useEffect(() => stopConfetti, []);
 
   const findRecords = async () => {
-    const { data: allLogs } = await supabase
-      .from("workout_set_logs")
-      .select("exercise_name, weight, reps, session_id")
-      .eq("user_id", userId)
-      .neq("session_id", sessionId);
+    const [{ data: allLogs }, families] = await Promise.all([
+      supabase
+        .from("workout_set_logs")
+        .select("exercise_name, weight, reps, session_id")
+        .eq("user_id", userId)
+        .neq("session_id", sessionId),
+      loadFamilyIndex(),
+    ]);
 
-    const prevLogs = allLogs ?? [];
-    const found: PRRecord[] = [];
-
-    const currentByEx: { [ex: string]: SetLog[] } = {};
-    sets.forEach(s => {
-      if (!currentByEx[s.exercise_name]) currentByEx[s.exercise_name] = [];
-      currentByEx[s.exercise_name].push(s);
-    });
-
-    for (const [exercise, exSets] of Object.entries(currentByEx)) {
-      const prevForEx = prevLogs.filter(l => l.exercise_name === exercise);
-      const currentMaxWeight = Math.max(...exSets.map(s => s.weight));
-      const current1RM = Math.max(...exSets.map(s => calc1RM(s.weight, s.reps)));
-      const currentMaxReps = Math.max(...exSets.map(s => s.reps));
-      const currentVolume = exSets.reduce((a, s) => a + s.weight * s.reps, 0);
-
-      if (prevForEx.length === 0) {
-        found.push({ exercise, type: "weight", oldValue: 0, newValue: currentMaxWeight, isFirst: true });
-        continue;
-      }
-
-      const prevMaxWeight = Math.max(...prevForEx.map(l => Number(l.weight)));
-      const prev1RM = Math.max(...prevForEx.map(l => calc1RM(Number(l.weight), l.reps)));
-      const prevMaxReps = Math.max(...prevForEx.map(l => l.reps));
-
-      // Best single-session volume for this exercise, so far
-      const prevVolumeBySession: { [sid: string]: number } = {};
-      prevForEx.forEach(l => {
-        prevVolumeBySession[l.session_id] = (prevVolumeBySession[l.session_id] ?? 0) + Number(l.weight) * l.reps;
-      });
-      const prevMaxVolume = Math.max(0, ...Object.values(prevVolumeBySession));
-
-      if (currentMaxWeight > prevMaxWeight) {
-        found.push({ exercise, type: "weight", oldValue: prevMaxWeight, newValue: currentMaxWeight, isFirst: false });
-      }
-      if (current1RM > prev1RM * 1.005) {
-        found.push({ exercise, type: "1rm", oldValue: Math.round(prev1RM * 10) / 10, newValue: Math.round(current1RM * 10) / 10, isFirst: false });
-      }
-      if (currentMaxReps > prevMaxReps) {
-        found.push({ exercise, type: "reps", oldValue: prevMaxReps, newValue: currentMaxReps, isFirst: false });
-      }
-      if (currentVolume > prevMaxVolume * 1.02) {
-        found.push({ exercise, type: "volume", oldValue: Math.round(prevMaxVolume), newValue: Math.round(currentVolume), isFirst: false });
-      }
-    }
+    const found = findPersonalRecords(
+      sets,
+      (allLogs ?? []).map((l) => ({ ...l, weight: Number(l.weight) })),
+      families.siblingsOf,
+    );
 
     setRecords(found);
     setLoading(false);
@@ -262,6 +210,13 @@ const PersonalRecords = ({ sessionId, sets, userId, planName, date }: Props) => 
                 );
               })}
             </div>
+            {(() => {
+              // A first time on a variation is judged against the lift it belongs to.
+              const against = [...new Set(recs.map((r) => r.baseline).filter((b): b is string => !!b))];
+              return against.length > 0 ? (
+                <p className="text-[10px] text-muted-foreground mt-2">בהשוואה ל{against.join(", ")}</p>
+              ) : null;
+            })()}
           </div>
         ))}
       </div>
